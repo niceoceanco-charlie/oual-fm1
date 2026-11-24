@@ -8,9 +8,10 @@ VERSION=$(cat wasm/VERSION); COMMIT=${GITHUB_SHA:-$(git rev-parse HEAD 2>/dev/nu
 mkdir -p "$OUT/obj"
 CF="--target=wasm32 -O2 -ffreestanding -nostdlib -Iwasm/include -Wall -Wextra -Wno-unused-function -Wno-unused-parameter"
 $CLANG $CF -fno-builtin -c wasm/libc.c -o "$OUT/obj/libc.o"
+$CLANG $CF -c core/oual_engine.c -o "$OUT/obj/oual_engine.o"
 $CLANG $CF -c wasm/oual_wasm.c -o "$OUT/obj/oual_wasm.o"
 $WASMLD --no-entry --gc-sections --strip-all -z stack-size=65536 --initial-memory=2097152 --max-memory=268435456 \
-  "$OUT/obj/oual_wasm.o" "$OUT/obj/libc.o" -o "$OUT/oual.wasm"
+  "$OUT/obj/oual_wasm.o" "$OUT/obj/oual_engine.o" "$OUT/obj/libc.o" -o "$OUT/oual.wasm"
 cp web/oual-wasm/oual-core.mjs web/oual-wasm/oual.mjs "$OUT/"
 # the worklet is a classic script: the core without its `export` keywords, then the processor
 { sed 's/^export //' web/oual-wasm/oual-core.mjs; cat web/oual-wasm/oual-worklet.part.js; } > "$OUT/oual-worklet.js"
