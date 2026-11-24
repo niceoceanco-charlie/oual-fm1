@@ -1,4 +1,6 @@
-# Installing the oual build on an FM-1 (not done yet: needs Charlie's "flash" for step C)
+# Installing the oual build on an FM-1
+
+v0.2 has been flashed to one FM-1 and restored to stock V15 from it. Back up first and read the risk note in the README.
 
 What exists: the CI image (a flash page with the oual firmware inside), and `out/oual-pack-uploader.html` (made locally by `web/build_uploader.py`; it holds the 3-bit sounds, so it is not committed).
 The oual firmware has its own identity, `FM-1_8990001`; the sampler is `FM-1_8000014`; stock V15 is `FM-1_015`.
