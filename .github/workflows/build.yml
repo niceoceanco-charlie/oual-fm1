@@ -12,6 +12,9 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
+    defaults:
+      run:
+        shell: bash         # bash -e -o pipefail: a failed build inside a pipe fails the step
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
