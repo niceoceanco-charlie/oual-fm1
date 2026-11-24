@@ -11,7 +11,7 @@ to run on the device with no computer in the loop. Hear the sounds and try the b
 - Sound or codec preference: [Sound feedback](../../issues/new?template=sound-feedback.yml)
 - Tried it on your FM-1: [Tester report](../../issues/new?template=tester-report.yml)
 - [Bug](../../issues/new?template=bug.yml) or [Idea](../../issues/new?template=idea.yml)
-- Share what you made: Discussions, "Show your sounds"
+- Share what you made: Discussions, "Show and tell"
 
 A port of Philip Meyer's `oual_qroccss` Max patch (ten looping sample voices with Crush, SRR, Drive, AM, Rand Pos, envelope) to the M-VAVE FM-1,
 to run on the device with no computer in the loop. **Status: the 10-voice engine and a 3-bit codec run and are tested on the host. Nothing has been

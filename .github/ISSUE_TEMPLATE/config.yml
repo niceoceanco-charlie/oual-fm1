@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Show your sounds
-    url: https://github.com/niceoceanco-charlie/oual-fm1/discussions/categories/show-your-sounds
+  - name: Show your sounds (Discussions, Show and tell)
+    url: https://github.com/niceoceanco-charlie/oual-fm1/discussions/categories/show-and-tell
     about: Share what you made, in Discussions.
   - name: Listen and compare codec settings
     url: https://niceocean.studio/lab/oual
