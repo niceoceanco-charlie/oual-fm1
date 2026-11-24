@@ -1,4 +1,3 @@
-# TO ENABLE: git mv ci/build.yml .github/workflows/build.yml (pushing a workflow file needs the GitHub token to have the "workflow" scope).
 # Host tests, then the device build with JieLi's Linux toolchain on a GitHub Linux machine (nothing is installed on anyone's computer).
 # The toolchain is downloaded and checked against a SHA-256 before it is unpacked. The build produces a package and a flash page as an artifact:
 # they are NOT to be used on a device until Charlie says "flash" in chat.
