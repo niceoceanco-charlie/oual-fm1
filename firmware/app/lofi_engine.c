@@ -35,17 +35,23 @@ static struct {
     volatile uint8_t bound, scale, scale_root; const uint8_t *pack; uint32_t bytes; lfp_info_t info;
     event_t ev[64]; volatile uint8_t ev_w, ev_r;
     volatile int32_t speed_q16, bend_q16, level_q8; int speed_steps; volatile uint16_t punch;
-    voice_t v[LE_VOICES]; uint32_t age; int32_t last_pitch[LFP_SLOTS]; uint32_t last_valid; uint32_t zone_mask;
+#ifndef OUAL_ONLY
+    voice_t v[LE_VOICES];
+#endif
+    uint32_t age; int32_t last_pitch[LFP_SLOTS]; uint32_t last_valid; uint32_t zone_mask;
     le_zone_t zone[LFP_SLOTS]; uint8_t fx[FX_COUNT][4]; le_arp_t arp;
     int32_t punch_speed_q16; uint32_t mclk_acc, mclk;
+#ifndef OUAL_ONLY      /* the sampler's effects: not part of an oual build */
     int32_t bus[FX_COUNT][BLK]; uint32_t fx_hot[FX_COUNT];
     uint16_t f_tab[128];
     int16_t rv[RV_C0 + RV_C1 + RV_C2 + RV_C3 + RV_A0 + RV_A1]; uint16_t rv_i[6]; int32_t rv_lp[4];
     int16_t dly[DLY_N]; uint32_t dly_w; int32_t dly_lp, dly_hold, dly_acc; uint8_t dly_phase;
     int32_t gate_g, cr_hold; uint32_t st_len, st_pos; uint8_t st_on, st_rec, st_ph; int16_t st_buf[2 * STUT_MAX]; uint32_t cr_ctr; svf_t flt, pf; int32_t pcr_hold; uint32_t pcr_ctr;
+#endif
 } g;
 static oual_engine o_eng; static uint8_t o_mode; static int32_t o_ctl[OUAL_VOICES][OUAL_P_COUNT];   /* oual mode: the engine and the control side's copy of every voice's settings */
 enum { EV_OUAL = 64 };                                                                                   /* event: slot = voice, key = parameter, pitch_q8 = value */
+#ifndef OUAL_ONLY
 typedef struct { uint16_t tick; uint8_t note, vel, on, fresh, pass, pad; } sev_t;
 static struct {
     volatile uint8_t state, pattern, quant, metro, countin, beats, bars[LS_PATTERNS]; volatile uint16_t bpm, count[LS_PATTERNS];
@@ -54,6 +60,7 @@ static struct {
     int8_t off_shift[256]; uint16_t on_tick[256]; uint8_t held[256]; uint8_t open_[256]; uint8_t freemode, armed; int click_pos; uint8_t click_accent;
 } q;
 static struct { uint8_t n, notes[8]; int pos, dirv; uint32_t acc, tick, rnd; int cur; int off_in; } ar;
+#endif
 /* 2^(i/48) in Q16 */
 static FM1_AUDIO_DATA const uint32_t pow48[48] = {
     65536,66471,67415,68370,69336,70313,71301,72300,73310,74332,75366,76412,77470,78541,79624,80719,
@@ -92,6 +99,7 @@ static void fx_defaults(void)
     static const uint8_t d[FX_COUNT][4] = {{70, 50, 60, 0}, {40, 55, 70, 0}, {70, 30, 90, 0}, {90, 30, 0, 0}};
     memcpy(g.fx, d, sizeof g.fx); g.arp.on = 0; g.arp.rate = 2; g.arp.dir = 0; g.arp.range = 2; g.arp.gate = 60;
 }
+#ifndef OUAL_ONLY
 static void tables_init(void)
 {
     for (unsigned i = 0; i < 128; i++) {         /* state variable filter coefficient f = 2 sin(pi fc / fs), fc = 40 Hz .. 10 kHz */
@@ -100,12 +108,22 @@ static void tables_init(void)
         int64_t s = x - x3 / 6 + x5 / 120; int64_t f = 2 * s; if (f > 29000) f = 29000; g.f_tab[i] = (uint16_t)f;
     }
 }
+#else
+static void tables_init(void) {}
+#endif
 void le_init(void)
 {
-    memset(&g, 0, sizeof g); memset(&q, 0, sizeof q); memset(&ar, 0, sizeof ar); ar.rnd = 12345; ar.cur = -1;
+    memset(&g, 0, sizeof g);
+#ifndef OUAL_ONLY
+    memset(&q, 0, sizeof q); memset(&ar, 0, sizeof ar); ar.rnd = 12345; ar.cur = -1;
     q.freemode = 1; q.bpm = 140; q.quant = 2; q.metro = 1; q.countin = 1; q.beats = 4; for (unsigned p = 0; p < LS_PATTERNS; p++) q.bars[p] = 2;
+#endif
     g.scale = 4; g.scale_root = 0;                      /* C minor until a pack says otherwise */
-    g.punch_speed_q16 = 65536; g.gate_g = 32768; seq_calc(); tables_init(); fx_defaults(); le_set_speed(0); le_set_bend(0); le_set_level(100);
+    g.punch_speed_q16 = 65536;
+#ifndef OUAL_ONLY
+    g.gate_g = 32768; seq_calc();
+#endif
+    tables_init(); fx_defaults(); le_set_speed(0); le_set_bend(0); le_set_level(100);
 }
 const lfp_info_t *le_info(void) { return g.bound ? &g.info : NULL; }
 static void ev_push(const event_t *e)
@@ -120,7 +138,10 @@ static void ev_push(const event_t *e)
 int le_bind(const uint8_t *pack, uint32_t bytes)
 {
     g.bound = 0; o_mode = 0; g.ev_r = g.ev_w;
-    memset(g.v, 0, sizeof g.v); q.state = LS_STOP; memset((void *)q.count, 0, sizeof q.count); memset(q.held, 0, sizeof q.held); ar.n = 0; ar.cur = -1; g.punch = 0;
+#ifndef OUAL_ONLY
+    memset(g.v, 0, sizeof g.v); q.state = LS_STOP; memset((void *)q.count, 0, sizeof q.count); memset(q.held, 0, sizeof q.held); ar.n = 0; ar.cur = -1;
+#endif
+    g.punch = 0;
     if (!pack) return 0;
     if (lfp_parse(pack, bytes, &g.info)) return -1;
     for (unsigned i = 0; i < LFP_SLOTS; i++) le_zone_defaults(i);
@@ -223,17 +244,24 @@ void le_arp_note_off(unsigned note) { event_t e = {EV_AOFF, 0, (uint8_t)note, 0,
 void le_zone_cut(unsigned slot) { event_t e = {EV_ZCUT, (uint8_t)slot, 0, 0, 0}; ev_push(&e); }
 void le_arp_release(void) { event_t e = {EV_ARELEASE, 0, 0, 0, 0}; ev_push(&e); }
 void le_punch(unsigned id, int on) { if (id < PN_COUNT) { if (on) g.punch |= (uint16_t)(1u << id); else g.punch &= (uint16_t)~(1u << id); } }
-unsigned le_voices_active(void) { unsigned n = 0; if (o_mode) { for (unsigned i = 0; i < OUAL_VOICES; i++) n += (unsigned)o_ctl[i][OUAL_P_ON]; return n; } for (unsigned i = 0; i < LE_VOICES; i++) n += g.v[i].active; return n; }
+unsigned le_voices_active(void) { unsigned n = 0; if (o_mode) { for (unsigned i = 0; i < OUAL_VOICES; i++) n += (unsigned)o_ctl[i][OUAL_P_ON]; return n; }
+#ifndef OUAL_ONLY
+    for (unsigned i = 0; i < LE_VOICES; i++) n += g.v[i].active;
+#endif
+    return n; }
 uint32_t le_voice_mask(void) { if (o_mode) { uint32_t m = 0; for (unsigned i = 0; i < OUAL_VOICES; i++) m |= (uint32_t)o_ctl[i][OUAL_P_ON] << i; return m; } return g.zone_mask; }
 uint32_t le_sounding_keys(unsigned bank)
 {
     uint32_t m = 0;
     if (o_mode) return bank == 0 ? le_voice_mask() : 0;
+#ifndef OUAL_ONLY
     for (unsigned i = 0; i < LE_VOICES; i++) { const voice_t *v = &g.v[i]; if (v->active && (!v->released || v->oneshot) && v->key / 32 == bank && v->key % 32 < 27) m |= 1u << (v->key % 32); }
+#endif
     return m;
 }
 const uint8_t *le_pack(void) { return g.bound ? g.pack : 0; }
 
+#ifndef OUAL_ONLY   /* the sampler's voices, sequencer and arpeggiator run only in a sampler build */
 /* ---------------- audio side: voices ---------------- */
 static FM1_AUDIO_CODE void decode_next(voice_t *v)
 {
@@ -491,6 +519,8 @@ static FM1_AUDIO_CODE void seq_run(unsigned frames, int32_t *out)
     }
 }
 /* control side */
+#endif
+#ifndef OUAL_ONLY
 static void seq_ev(unsigned type, unsigned a, unsigned b) { event_t e = {(uint8_t)type, 0, (uint8_t)a, (uint8_t)b, 0}; ev_push(&e); }
 void le_seq_play(void) { seq_ev(SC_PLAY, 0, 0); }
 void le_seq_stop(void) { seq_ev(SC_STOP, 0, 0); }
@@ -541,6 +571,18 @@ int le_seq_import(const uint8_t *b, unsigned n)
     for (unsigned p = 0; p < LS_PATTERNS; p++) { q.bars[p] = bars[p]; q.count[p] = cnt[p]; pos += 3; for (unsigned i = 0; i < cnt[p]; i++, pos += 5) { sev_t *e = &q.ev[p][i]; e->tick = (uint16_t)(b[pos] | b[pos + 1] << 8); e->note = b[pos + 2]; e->vel = b[pos + 3] & 127; e->on = b[pos + 3] >> 7; e->fresh = 0; e->pass = 0; } }
     q.pattern = 0; seq_calc(); return 0;
 }
+#else   /* oual build: the panel code still calls these; the sequencer is not part of it */
+void le_seq_play(void) {} void le_seq_stop(void) {} void le_seq_rec(int on) { (void)on; } void le_seq_clear(void) {} void le_seq_clear_all(void) {}
+void le_seq_copy(unsigned to) { (void)to; } void le_seq_undo(void) {} void le_seq_select(unsigned p) { (void)p; } void le_seq_set_bars(unsigned b) { (void)b; }
+void le_seq_set_beats(unsigned b) { (void)b; } void le_seq_set_bpm(unsigned b) { (void)b; } void le_seq_set_free(unsigned on) { (void)on; }
+void le_seq_set_quant(unsigned qn) { (void)qn; } void le_seq_set_metro(unsigned on, unsigned ci) { (void)on; (void)ci; }
+void le_seq_status_get(struct le_seq_status *st) { memset(st, 0, sizeof *st); st->bpm = 140; st->beats = 4; st->bars = 2; }
+unsigned le_seq_pattern_count(unsigned p) { (void)p; return 0; }
+unsigned le_seq_events(unsigned p, struct le_seq_event *out, unsigned max) { (void)p; (void)out; (void)max; return 0; }
+unsigned le_seq_export(uint8_t *b, unsigned cap) { (void)b; (void)cap; return 0; }
+int le_seq_import(const uint8_t *b, unsigned n) { (void)b; (void)n; return 0; }
+#endif
+#ifndef OUAL_ONLY
 /* ---------------- effects ---------------- */
 static FM1_AUDIO_DATA const uint16_t rv_len[6] = {RV_C0, RV_C1, RV_C2, RV_C3, RV_A0, RV_A1};
 static FM1_AUDIO_CODE int32_t rv_tick(int32_t x16)       /* four damped combs and two allpasses (Freeverb in small): size = feedback, damp = lowpass in the feedback */
@@ -683,6 +725,7 @@ static FM1_AUDIO_CODE void render_voice(voice_t *v, unsigned frames, int32_t *ou
         if (s0) g.bus[FX_REVERB][f] += (o * s0) >> 7; if (s1) g.bus[FX_DELAY][f] += (o * s1) >> 7; if (s2) g.bus[FX_CRUSH][f] += (o * s2) >> 7; if (s3) g.bus[FX_FILTER][f] += (o * s3) >> 7;
     }
 }
+#endif
 static FM1_AUDIO_CODE void o_run(int32_t *out, unsigned frames)      /* oual mode: apply the queued settings, render ten voices, to Q23 */
 {
     while (g.ev_r != g.ev_w) {
@@ -700,6 +743,7 @@ FM1_AUDIO_CODE void le_render(int32_t *out, unsigned frames)
     for (unsigned i = 0; i < frames * 2; i++) out[i] = 0;
     if (!g.bound) { g.ev_r = g.ev_w; return; }
     if (o_mode) { o_run(out, frames); return; }
+#ifndef OUAL_ONLY
     handle_events();
     arp_run(frames);
     seq_run(frames, out);
@@ -721,6 +765,7 @@ FM1_AUDIO_CODE void le_render(int32_t *out, unsigned frames)
         if (a > 6291456) { int32_t e = a - 6291456; if (e > 4194304) e = 4194304; a = 6291456 + e - (int32_t)(((int64_t)e * e) >> 24); if (a > 8388607) a = 8388607; }
         out[i] = x < 0 ? -a : a;
     }
+#endif
 }
 /* ---------------- settings of the bound pack: zone controls, fx, arp, master ---------------- */
 unsigned le_settings_export(uint8_t *b, unsigned cap)

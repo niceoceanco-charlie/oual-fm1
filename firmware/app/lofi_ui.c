@@ -258,6 +258,7 @@ typedef struct { char name[9]; char val[12]; int frac; } tile_t;       /* frac 0
 static void tile(tile_t *t, const char *name, const char *val, int frac) { unsigned i = 0; while (name[i] && i < 8) { t->name[i] = name[i]; ++i; } t->name[i] = 0; i = 0; while (val[i] && i < 11) { t->val[i] = val[i]; ++i; } t->val[i] = 0; t->frac = frac; }
 static void tile_int(tile_t *t, const char *name, int v, int lo, int hi) { char b[12]; fmt_int(b, v); tile(t, name, b, hi > lo ? (v - lo) * 100 / (hi - lo) : 0); }
 #include "oual_ui.inc"
+#ifndef OUAL_ONLY
 static void page_tiles(unsigned pg, tile_t t[4])
 {
     if (le_is_oual() && oual_tiles(pg, t)) return;
@@ -321,6 +322,19 @@ static void page_adjust(unsigned pg, unsigned k, int d, uint32_t now)
     }
     dirty |= (pg == PG_HOME && k < 3) || pg == PG_FX ? 1 : 3;     /* only the tiles + header when the picture does not depend on the knob (no flicker) */
 }
+#else   /* oual build: only the oual pages */
+static void page_tiles(unsigned pg, tile_t t[4])
+{
+    if (le_is_oual() && oual_tiles(pg, t)) return;
+    for (unsigned i = 0; i < 4; ++i) tile(&t[i], "", "", -1);
+    if (pg == PG_SAVE) tile(&t[0], "SAVE", "TURN", -1);
+}
+static void page_adjust(unsigned pg, unsigned k, int d, uint32_t now)
+{
+    if (pg == PG_SAVE) { if (d > 0 && k == 0) say(tail_save() == 0 ? "SAVED" : "NOT SAVED", now); dirty |= 3; return; }
+    if (le_is_oual() && oual_adjust(pg, k, d >= -2 && d <= 2 ? d : d * 2)) { unsaved = 1; dirty |= 3; }
+}
+#endif
 static void page_select(unsigned pg, int d, uint32_t now)       /* the SELECT knob */
 {
     int sgn = d > 0 ? 1 : -1; struct le_seq_status st; le_seq_status_get(&st);
@@ -374,14 +388,20 @@ static const char *const state_name[5] = {"STOP", "COUNT", "PLAY", "REC", "FREE"
 static void draw_header(int force)
 {
     struct le_seq_status st; le_seq_status_get(&st); const lfp_info_t *in = le_info(); char b[24]; unsigned n;
+    if (le_is_oual()) { st.state = 0; st.bpm = 0; st.pattern = (uint8_t)le_voices_active(); }      /* oual: the corner shows how many voices are on */
     uint32_t key = (uint32_t)st.state | (uint32_t)st.pattern << 3 | (uint32_t)st.bpm << 8 | (uint32_t)page << 20 | (uint32_t)unsaved << 25 | (uint32_t)bank << 26;
     if (!force && hdr_key_valid && key == hdr_key) return;
     hdr_key = key; hdr_key_valid = 1;
     gfx_fill(0, 0, 240, 26, COL_BAR); draw_text(6, 5, 2, page_name[page], COL_ACC, COL_BAR);
     if (in) { draw_pad(82, 9, 1, in->name, 12, COL_FG, COL_BAR); }
+    if (le_is_oual()) { n = (unsigned)fmt_int(b, st.pattern); n = put(b, n, " ON"); draw_text(160, 9, 1, b, st.pattern ? COL_OK : COL_DIM, COL_BAR); }
+#ifndef OUAL_ONLY
+    else {
     n = 0; b[n++] = (char)('A' + st.pattern); b[n++] = ' '; n += (unsigned)fmt_int(b + n, st.bpm); b[n] = 0; draw_text(160, 5, 1, b, COL_DIM, COL_BAR);
     draw_text(160, 15, 1, state_name[st.state > 4 ? 0 : st.state], st.state == LS_REC || st.state == LS_FREE ? 0xf800 : (st.state ? COL_OK : COL_DIM), COL_BAR);
     n = 0; b[n++] = 'Z'; n += (unsigned)fmt_int(b + n, bank + 1); b[n] = 0; draw_text(208, 15, 1, b, COL_FG, COL_BAR);
+    }
+#endif
     if (unsaved) draw_text(226, 5, 1, "*", COL_ACC, COL_BAR);
 }
 static void draw_wave(unsigned y0, unsigned h, int markers)       /* the active zone; start / end markers on EDIT */
@@ -411,6 +431,7 @@ static void draw_zone_line(unsigned y)
 /* length in ticks of the note that starts with event i. The list is in recording order, so the release of a note is the next event of the same pitch AFTER it in the list
  * (if that is another press, the release was never recorded). Matching by time instead (the nearest event of the same pitch) breaks as soon as passes overlap (overdub of the same
  * key: press, press, release, release) and draws notes too short or as one long bar. Returns 0 when there is no recorded release. */
+#ifndef OUAL_ONLY   /* the sampler's sequencer pictures */
 static unsigned seq_pair_len(const struct le_seq_event *ev, unsigned cnt, unsigned i, unsigned L)
 {
     for (unsigned j = i + 1; j < cnt; ++j) if (ev[j].note == ev[i].note) { if (ev[j].on) return 0; unsigned d = (ev[j].tick % L + L - ev[i].tick % L) % L; return d ? d : L; }
@@ -474,6 +495,8 @@ static void seq_playhead(void)               /* move the playhead without redraw
     if (seq_ph >= 0) { gfx_fill((unsigned)seq_ph - 1, 30, 5, 118, COL_BG); seq_draw(seq_ph - 1, seq_ph + 4, 0); }
     gfx_fill((unsigned)nx - 1, 30, 5, 118, COL_BG); seq_draw(nx - 1, nx + 4, 1);
 }
+#endif
+#ifndef OUAL_ONLY
 static void draw_vis(void)
 {
     const lfp_info_t *in = le_info(); char b[32]; unsigned n; le_zone_t *z = le_zone((unsigned)az);
@@ -525,6 +548,27 @@ static void draw_vis(void)
     case PG_SEQ: seq_draw(0, 240, 1); break;
     }
 }
+#else
+static void draw_vis(void)
+{
+    const lfp_info_t *in = le_info();
+    if (!in) { draw_text(8, 60, 2, "NO PACK", COL_FG, COL_BG); draw_text(8, 90, 1, "SEND AN OUAL PACK OVER USB OR", COL_DIM, COL_BG); draw_text(8, 104, 1, "BLUETOOTH FROM THE WEB EDITOR", COL_DIM, COL_BG); return; }
+    switch (page) {
+    case PG_HOME: draw_strip(in, 32); draw_zone_line(58); draw_wave(74, 70, 0); break;
+    case PG_EDIT: draw_zone_line(30); draw_wave(46, 98, 1); break;
+    case PG_FX: draw_zone_line(30); draw_text(8, 60, 1, "CRUSH  SRR  DRIVE  AM", COL_DIM, COL_BG); draw_text(8, 76, 1, "OF THE SELECTED VOICE", COL_DIM, COL_BG); break;
+    case PG_GLO: draw_text(8, 60, 1, "MASTER LEVEL", COL_DIM, COL_BG); break;
+    case PG_SAVE: draw_text(8, 60, 1, "TURN K1 TO SAVE THE VOICES", COL_DIM, COL_BG); if (msg_until) draw_text(8, 140, 1, msg_text, COL_ACC, COL_BG); break;
+    case PG_SEL: {
+        draw_strip(in, 32); unsigned idx[32], cnt = 0, pos = 0; for (unsigned i = 0; i < in->n_slots && cnt < 32; ++i) if (in_bank(i)) { if ((int)i == az) pos = cnt; idx[cnt++] = i; }
+        unsigned first = pos > 2 ? pos - 2 : 0;
+        for (unsigned row = 0; row < 5 && first + row < cnt; ++row) { unsigned i = idx[first + row], y = 62 + row * 17; int on = (int)i == az; uint16_t bg = on ? COL_BAR : COL_BG; gfx_fill(0, y, 240, 15, bg);
+            gfx_fill(4, y + 2, 5, 11, le_zone(i)->mute ? COL_DIM : zone_col[i % 12]); draw_pad(16, y + 4, 1, in->slot[i].name, 12, le_zone(i)->mute ? COL_DIM : COL_FG, bg); draw_text(150, y + 4, 1, le_zone(i)->mute ? "OFF" : "ON", le_zone(i)->mute ? COL_DIM : COL_OK, bg); }
+        break; }
+    default: oual_vis_note(); break;
+    }
+}
+#endif
 static void draw_tiles(void)
 {
     tile_t t[4]; page_tiles(page, t);
@@ -637,7 +681,9 @@ void groove_screen_control(void)
     else if (now - last_draw > 100U) {
         static uint32_t strip_keys = 0xffffffffu; last_draw = now; draw_header(0); leds_refresh(now);
         if ((page == PG_HOME || page == PG_SEL) && le_info() && strip_keys != (down_keys | sounding)) { uint32_t d = strip_keys ^ (down_keys | sounding); strip_keys = down_keys | sounding; for (unsigned k = 0; k < KEYS; ++k) if (strip_keys == 0xffffffffu || (d >> k & 1U)) draw_strip_key(le_info(), 32, k); }
+#ifndef OUAL_ONLY
         if (page == PG_SEQ && gfx_idle()) seq_playhead();
+#endif
     }
     gfx_flush(150);                              /* a bounded amount of drawing per tick: the keys are read again in time */
 }

@@ -28,6 +28,9 @@ jobs:
           gcc -O1 -g -DFM1_HOST_TEST -Wno-misleading-indentation -Wno-unused-result -Wno-unused-function -Isdk/include -Iapp -Iapp/synth -Iapp/board -Ihosttest \
               -o /tmp/oual_host hosttest/oual_host.c app/lofi_engine.c -lm
           cd hosttest && /tmp/oual_host ../../out/ci_test.lfp
+          cd .. && gcc -O1 -g -DFM1_HOST_TEST -DOUAL_ONLY -Wno-misleading-indentation -Wno-unused-result -Wno-unused-function -Wno-unused-const-variable -Isdk/include -Iapp -Iapp/synth -Iapp/board -Ihosttest \
+              -o /tmp/oual_host_only hosttest/oual_host.c app/lofi_engine.c -lm
+          cd hosttest && /tmp/oual_host_only ../../out/ci_test.lfp
       - name: JieLi Linux toolchain (pinned by SHA-256)
         run: |
           mkdir -p tc
@@ -41,7 +44,7 @@ jobs:
           git -C base checkout -q f21410d006896d83fbe152ba35c93d2543e1ef60
           python3 build/build_fw.py base/firmware "$TC" 2>&1 | tee base-build.log | tail -25
       - name: Device build of the oual firmware
-        run: python3 build/build_fw.py firmware "$TC" 2>&1 | tee oual-build.log | tail -40
+        run: python3 build/build_fw.py firmware "$TC" --cflags "-DOUAL_ONLY" 2>&1 | tee oual-build.log | tail -40
       - name: Sizes
         if: always()
         run: |
