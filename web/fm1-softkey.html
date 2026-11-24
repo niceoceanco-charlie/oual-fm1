@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FM-1 soft key</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff;--fg:#111;--dim:#666;--acc:#c45a00;--bar:#ddd}
+@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--dim:#999;--acc:#ff9a3c;--bar:#333}}
+body{font:16px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--fg);max-width:640px;margin:0 auto;padding:16px}
+h1{font-size:1.4rem;margin:.2rem 0}.note{color:var(--dim);font-size:.9rem}
+input,button{font:inherit;padding:.6rem .9rem;border-radius:.5rem;border:1px solid var(--dim);background:transparent;color:var(--fg)}
+button{background:var(--acc);color:#000;border-color:var(--acc);font-weight:700}button:disabled{opacity:.35}
+.row{display:flex;flex-wrap:wrap;gap:.6rem;margin:1rem 0}pre{background:var(--bar);padding:.7rem;border-radius:.5rem;white-space:pre-wrap;font-size:.85rem;min-height:5rem}
+</style></head><body>
+<h1>FM-1 soft key</h1>
+<p class="note">Sends the one message <b>F0 22 24 35 7D F7</b> to an FM-1, once. The FM-1 then goes black and restarts into the chip's own update mode (USB id 4C4A:8057, "WL82 UBOOT1.00").
+<b>It writes nothing to the FM-1.</b> Switching the FM-1 off and on again brings its firmware back.</p>
+<p class="note">Before it sends, this page asks the FM-1 for its identity (a read-only question) and refuses unless it answers as an FM-1. It uses the one MIDI output whose name contains "FM-1" or "FM1" and ignores every other device.
+Use Chrome, open this file from disk, and start your recovery tool first: the Mac gives the update mode up after about 30 seconds if nobody takes it.</p>
+<div class="row"><input id="confirm" placeholder="type UBOOT" autocomplete="off" size="12"><button id="send" disabled>SEND SOFT KEY</button></div>
+<pre id="log">Type UBOOT to enable the button.</pre>
+<script>
+(function () {
+'use strict';
+const $ = s => document.querySelector(s);
+const SOFT_KEY = Uint8Array.from([0xF0, 0x22, 0x24, 0x35, 0x7D, 0xF7]);
+let used = false;
+const log = t => { const l = $('#log'); l.textContent = (l.textContent === 'Type UBOOT to enable the button.' ? '' : l.textContent + '\n') + t; };
+/* the updater's own framing, as in the M-VAVE workbench: 7-bit packing of [0, 89, command, length(2), 0, payload..., ~checksum] */
+function pack7(bytes) { const o = []; let bits = 0, v = 0; for (const b of bytes) { v |= b << bits; bits += 8; while (bits >= 7) { o.push(v & 127); v >>>= 7; bits -= 7; } } if (bits) o.push(v & 127); return o; }
+function frame(cmd, payload = []) { let s = 0; for (const b of payload) s = (s + b) & 255; return Uint8Array.from([240, ...pack7([0, 89, cmd, payload.length & 255, payload.length >> 8, 0, ...payload, (~s) & 255]), 247]); }
+function parse(bytes) {
+  if (!bytes || bytes.length < 10 || bytes[0] !== 240 || bytes[bytes.length - 1] !== 247) return null;
+  const raw = []; let bits = 0, v = 0;
+  for (let i = 1; i < bytes.length - 1; i++) { if (bytes[i] > 127) return null; v |= bytes[i] << bits; bits += 7; if (bits >= 8) { raw.push(v & 255); v >>>= 8; bits -= 8; } }
+  if (raw.length < 7 || raw[0] !== 0 || raw[1] !== 89) return null;
+  let s = 0; for (let i = 6; i < raw.length; i++) s = (s + raw[i]) & 255; return s === 255 ? { command: raw[2], data: Uint8Array.from(raw.slice(6, -1)) } : null;
+}
+async function identity(inp, out) {
+  let got = null; const buf = [];
+  const h = ev => { for (const b of ev.data) { if (b === 0xF0) buf.length = 0; buf.push(b); if (b === 0xF7) { const p = parse(Uint8Array.from(buf)); if (p && p.command === 17) got = p; buf.length = 0; } } };
+  inp.addEventListener('midimessage', h);
+  try { for (let i = 0; i < 2 && !got; i++) { out.send(frame(17)); await new Promise(r => setTimeout(r, 1000)); } } finally { inp.removeEventListener('midimessage', h); }
+  return got ? String.fromCharCode(...got.data).replace(/[^\x20-\x7e]/g, '').trim() : null;
+}
+$('#confirm').oninput = () => { $('#send').disabled = used || $('#confirm').value.trim().toUpperCase() !== 'UBOOT'; };
+$('#send').onclick = async () => {
+  if (used) return; $('#send').disabled = true; $('#confirm').disabled = true; used = true;       // one press, one send; reload the page to start over
+  try {
+    if (!navigator.requestMIDIAccess) throw new Error('this browser has no Web MIDI: use Chrome');
+    const access = await navigator.requestMIDIAccess({ sysex: true });
+    const outs = [...access.outputs.values()].filter(o => o.state === 'connected'), ins = [...access.inputs.values()].filter(i => i.state === 'connected');
+    log('MIDI outputs: ' + (outs.map(o => o.name).join(', ') || 'none'));
+    const fm = outs.filter(o => /fm-?1/i.test(o.name || ''));
+    if (fm.length !== 1) throw new Error(fm.length ? 'more than one FM-1 output (' + fm.map(o => o.name).join(', ') + '): unplug the others. Nothing sent.' : 'no output with "FM-1" or "FM1" in its name. Nothing sent.');
+    const out = fm[0], inp = ins.find(i => i.name === out.name);
+    if (!inp) throw new Error('found the output ' + out.name + ' but not its input. Nothing sent.');
+    log('using: ' + out.name); await out.open(); await inp.open();
+    const id = await identity(inp, out);
+    if (!id) throw new Error('the FM-1 did not answer the identity question. Nothing sent.');
+    log('identity: ' + id);
+    if (!/^(FM-1_|FM1_)/.test(id)) throw new Error('that is not an FM-1 identity. Nothing sent.');
+    out.send(SOFT_KEY);                                                                                  // exactly once
+    log('\nSENT F0 22 24 35 7D F7 once. The FM-1 should go black now and show up on USB as WL82 UBOOT1.00.\nDo not click again. To leave update mode: switch the FM-1 off and on.');
+  } catch (e) { log('Stopped: ' + e.message); }
+};
+})();
+</script></body></html>
