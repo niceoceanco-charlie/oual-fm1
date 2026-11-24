@@ -10,13 +10,14 @@ struct fm1_audio_stats;
 extern uint32_t fm1_audio_block_ticks(void);
 extern void fm1_audio_stats_reset_peak(void);
 extern void fm1_audio_load_read(uint32_t *avg_ticks, uint32_t *peak_ticks);
-static unsigned cpu_avg, cpu_pk, cpu_over, cpu_over_seen, cpu_dropped; static uint32_t cpu_t;
+static unsigned cpu_avg, cpu_pk, cpu_over, cpu_over_seen, cpu_dropped; static uint32_t cpu_t; static uint8_t cpu_seeded;
 static void cpu_poll(uint32_t now)
 {
     if (now - cpu_t < 500U) return; cpu_t = now;
     uint32_t avg, pk, bt = fm1_audio_block_ticks(); fm1_audio_load_read(&avg, &pk);
     struct fm1_audio_stats st; fm1_audio_stats_read(&st);
     unsigned a = bt ? (unsigned)((uint64_t)avg * 100 / bt) : 0, p = bt ? (unsigned)((uint64_t)pk * 100 / bt) : 0;
+    if (!cpu_seeded) { cpu_seeded = 1; cpu_over_seen = st.overruns; }      /* overruns counted before the first poll (boot, pack upload) are not a reason to drop a voice */
     if (st.overruns > cpu_over_seen && le_voices_active() >= 2) { int v = le_oual_drop_newest(); if (v) { static char m[16] = "DROPPED V10"; if (v >= 10) { m[9] = '1'; m[10] = '0'; m[11] = 0; } else { m[9] = (char)('0' + v); m[10] = 0; } ++cpu_dropped; say(m, now); } }
     cpu_over_seen = st.overruns;
     if (a != cpu_avg || p != cpu_pk || st.overruns != cpu_over) { cpu_avg = a; cpu_pk = p; cpu_over = st.overruns; dirty |= 1; }

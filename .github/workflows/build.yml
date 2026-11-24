@@ -35,6 +35,8 @@ jobs:
           cd hosttest && /tmp/oual_host_only ../../out/ci_test.lfp
       - name: Pack upload test (the uploader page's JavaScript against the firmware's protocol code, with packet loss and a reboot)
         run: node test/test_upload.js out/ci_test.lfp
+      - name: Uploader keeps the chosen port
+        run: node test/test_uploader_port.js
       - name: JieLi Linux toolchain (pinned by SHA-256)
         run: |
           mkdir -p tc
