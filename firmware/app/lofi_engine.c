@@ -49,8 +49,10 @@ static struct {
     int32_t gate_g, cr_hold; uint32_t st_len, st_pos; uint8_t st_on, st_rec, st_ph; int16_t st_buf[2 * STUT_MAX]; uint32_t cr_ctr; svf_t flt, pf; int32_t pcr_hold; uint32_t pcr_ctr;
 #endif
 } g;
-static oual_engine o_eng; static uint8_t o_mode; static int32_t o_ctl[OUAL_VOICES][OUAL_P_COUNT]; static int32_t o_rvb;   /* oual mode: the engine and the control side's copy of every voice's settings */
-enum { EV_OUAL = 64 };                                                                                   /* event: slot = voice, key = parameter, pitch_q8 = value */
+static oual_engine o_eng; static uint8_t o_mode;
+/* oual mode: the control side writes the settings here (aligned words, one writer); the audio side compares them with what it has applied (o_app) at the start of every block.
+ * Nothing is queued, so a fast burst of key presses or knob turns cannot drop a change. */
+static volatile int32_t o_ctl[OUAL_VOICES][OUAL_P_COUNT]; static volatile int32_t o_rvb; static int32_t o_app[OUAL_VOICES][OUAL_P_COUNT], o_rvb_app;   /* oual mode: the engine and the control side's copy of every voice's settings */
 #ifndef OUAL_ONLY
 typedef struct { uint16_t tick; uint8_t note, vel, on, fresh, pass, pad; } sev_t;
 static struct {
@@ -146,13 +148,13 @@ int le_bind(const uint8_t *pack, uint32_t bytes)
     if (lfp_parse(pack, bytes, &g.info)) return -1;
     for (unsigned i = 0; i < LFP_SLOTS; i++) le_zone_defaults(i);
     if (g.info.ver == 2) {      /* oual pack: sounds are 3-bit, slot n = voice n */
-        oual_init(&o_eng, LE_OUT_RATE, 1); o_rvb = 1000; oual_set_reverb(&o_eng, o_rvb);      /* the reverb of the patch, on */
+        oual_init(&o_eng, LE_OUT_RATE, 1); o_rvb = 1000; o_rvb_app = 1000; oual_set_reverb(&o_eng, o_rvb);      /* the reverb of the patch, on */
         for (unsigned i = 0; i < OUAL_VOICES && i < g.info.n_slots; i++) {
             const lfp_slot_t *sl = &g.info.slot[i]; oual_sound snd = {pack + sl->offset, sl->frames, g.info.src_rate}; oual_set_sound(&o_eng, (int)i, &snd);
-            int32_t *c = o_ctl[i]; c[OUAL_P_ON] = 0; c[OUAL_P_TRANSPOSE] = sl->tune; c[OUAL_P_RAND_POS] = 0; c[OUAL_P_CRUSH] = 0; c[OUAL_P_SRR] = 0; c[OUAL_P_DRIVE] = 0; c[OUAL_P_AM] = 0;
+            volatile int32_t *c = o_ctl[i]; c[OUAL_P_ON] = 0; c[OUAL_P_TRANSPOSE] = sl->tune; c[OUAL_P_RAND_POS] = 0; c[OUAL_P_CRUSH] = 0; c[OUAL_P_SRR] = 0; c[OUAL_P_DRIVE] = 0; c[OUAL_P_AM] = 0;
             c[OUAL_P_START] = sl->loop_end == LFP_NO_LOOP ? 0 : (int32_t)((uint64_t)sl->loop_start * 65536u / (sl->frames ? sl->frames : 1)); c[OUAL_P_END] = sl->loop_end == LFP_NO_LOOP ? 65536 : (int32_t)((uint64_t)sl->loop_end * 65536u / (sl->frames ? sl->frames : 1));
             c[OUAL_P_ENV_RATE] = 1024; c[OUAL_P_PAN_X] = (int32_t)(i * 1000u / (OUAL_VOICES - 1)); c[OUAL_P_LEVEL_Y] = 300;
-            for (unsigned k = 0; k < OUAL_P_COUNT; k++) oual_set(&o_eng, (int)i, (enum oual_param)k, c[k]); }
+            for (unsigned k = 0; k < OUAL_P_COUNT; k++) { oual_set(&o_eng, (int)i, (enum oual_param)k, c[k]); o_app[i][k] = c[k]; } }
         o_mode = 1; }
     g.last_valid = 0; g.pack = pack; g.bytes = bytes; le_set_scale(g.info.scale, g.info.scale_root); g.bound = 1; return 0;
 }
@@ -228,17 +230,16 @@ void le_oual_set(unsigned v, unsigned p, int val)
     case OUAL_P_ENV_RATE: val = clampi(val, -1024, 1024); break;
     default: val = clampi(val, 0, 1000); break;
     }
-    o_ctl[v][p] = val; if (p == OUAL_P_ON) g.zone[v].mute = !val;
+    o_ctl[v][p] = val; if (p == OUAL_P_ON) g.zone[v].mute = !val;      /* picked up by the audio side at the next block */
     if (p == OUAL_P_START && v < g.info.n_slots) g.zone[v].start = (uint32_t)((uint64_t)g.info.slot[v].frames * (uint32_t)val / 65536u);        /* the EDIT picture draws the zone's start / end */
     if (p == OUAL_P_END && v < g.info.n_slots) g.zone[v].end = val >= 65536 ? 0 : (uint32_t)((uint64_t)g.info.slot[v].frames * (uint32_t)val / 65536u);
          /* the SEL page lists the voices by their zone mute */
-    event_t e = {EV_OUAL, (uint8_t)v, (uint8_t)p, 0, val}; ev_push(&e);
 }
 int le_oual_get_reverb(void) { return o_rvb; }
 void le_oual_set_reverb(int permille)
 {
     if (!o_mode) return;
-    o_rvb = clampi(permille, 0, 1000); event_t e = {EV_OUAL, OUAL_VOICES, 0, 0, o_rvb}; ev_push(&e);      /* slot OUAL_VOICES = the engine itself */
+    o_rvb = clampi(permille, 0, 1000);
 }
 int le_oual_decode(unsigned slot, unsigned sb, int16_t *pcm)
 {
@@ -734,11 +735,9 @@ static FM1_AUDIO_CODE void render_voice(voice_t *v, unsigned frames, int32_t *ou
 #endif
 static FM1_AUDIO_CODE void o_run(int32_t *out, unsigned frames)      /* oual mode: apply the queued settings, render ten voices, to Q23 */
 {
-    while (g.ev_r != g.ev_w) {
-        const event_t *e = &g.ev[g.ev_r];
-        if (e->type == EV_OUAL) { if (e->slot == OUAL_VOICES) oual_set_reverb(&o_eng, e->pitch_q8); else oual_set(&o_eng, e->slot, (enum oual_param)e->key, e->pitch_q8); }
-        g.ev_r = (uint8_t)((g.ev_r + 1) & 63);
-    }
+    g.ev_r = g.ev_w;                                        /* nothing in the sampler's event ring is for us */
+    for (unsigned v = 0; v < OUAL_VOICES; v++) for (unsigned k = 0; k < OUAL_P_COUNT; k++) { int32_t x = o_ctl[v][k]; if (x != o_app[v][k]) { o_app[v][k] = x; oual_set(&o_eng, (int)v, (enum oual_param)k, x); } }
+    { int32_t r = o_rvb; if (r != o_rvb_app) { o_rvb_app = r; oual_set_reverb(&o_eng, r); } }
     o_eng.master_q15 = (g.level_q8 * 26214) / 200;               /* level 100 = 0.8 */
     int16_t buf[2 * BLK]; oual_render(&o_eng, buf, (int)frames);
     for (unsigned i = 0; i < frames * 2; i++) out[i] = (int32_t)buf[i] * 256;

@@ -30,6 +30,8 @@ jobs:
           cd .. && gcc -O1 -g -DFM1_HOST_TEST -DOUAL_ONLY -Wno-misleading-indentation -Wno-unused-result -Wno-unused-function -Wno-unused-const-variable -Isdk/include -Iapp -Iapp/synth -Iapp/board -Ihosttest \
               -o /tmp/oual_host_only hosttest/oual_host.c app/lofi_engine.c -lm
           cd hosttest && /tmp/oual_host_only ../../out/ci_test.lfp
+      - name: Pack upload test (the uploader page's JavaScript against the firmware's protocol code, with packet loss and a reboot)
+        run: node test/test_upload.js out/ci_test.lfp
       - name: JieLi Linux toolchain (pinned by SHA-256)
         run: |
           mkdir -p tc
@@ -44,6 +46,10 @@ jobs:
           python3 build/build_fw.py base/firmware "$TC" 2>&1 | tee base-build.log | tail -25
       - name: Device build of the oual firmware
         run: python3 build/build_fw.py firmware "$TC" --cflags "-DOUAL_ONLY" 2>&1 | tee oual-build.log | tail -40
+      - name: Identity inside the oual package
+        run: |
+          grep -o '"product":"[^"]*"' firmware/build/FM1-Lofi-Workbench.html | head -1 | tee identity.txt
+          grep -o '"product":"[^"]*"' base/firmware/build/FM1-Lofi-Workbench.html | head -1 | tee -a identity.txt
       - name: Sizes and the heap that is left
         if: always()
         run: |
@@ -65,4 +71,5 @@ jobs:
             base-build.log
             oual-build.log
             heap.txt
+            identity.txt
             base-sdk.map

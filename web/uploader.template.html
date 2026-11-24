@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>oual pack uploader</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff;--fg:#111;--dim:#666;--acc:#c45a00;--bar:#ddd}
+@media (prefers-color-scheme:dark){:root{--bg:#111;--fg:#eee;--dim:#999;--acc:#ff9a3c;--bar:#333}}
+body{font:16px/1.5 system-ui,sans-serif;background:var(--bg);color:var(--fg);max-width:680px;margin:0 auto;padding:16px}
+h1{font-size:1.4rem;margin:.2rem 0}.note{color:var(--dim);font-size:.9rem}
+button,select{font:inherit;padding:.55rem .9rem;border-radius:.5rem;border:1px solid var(--dim);background:transparent;color:var(--fg)}
+button.primary{background:var(--acc);color:#000;border-color:var(--acc);font-weight:600}button:disabled{opacity:.4}
+.row{display:flex;flex-wrap:wrap;gap:.5rem;margin:.8rem 0}table{border-collapse:collapse;width:100%;font-size:.9rem}td,th{padding:.2rem .4rem;text-align:left;border-bottom:1px solid var(--bar)}
+.bar{height:10px;background:var(--bar);border-radius:5px;overflow:hidden}.bar>div{height:100%;width:0;background:var(--acc)}
+pre{background:var(--bar);padding:.6rem;border-radius:.5rem;white-space:pre-wrap;font-size:.85rem;min-height:4rem}
+</style></head><body>
+<h1>oual pack uploader</h1>
+<p class="note">Sends a sample pack to an FM-1 that runs the <b>oual</b> firmware, over USB MIDI. It replaces the pack on the FM-1 and does not touch the firmware.
+Use Chrome or Edge, open this file from disk, switch the FM-1 on and connect it with a USB data cable. Close other tabs that use MIDI.</p>
+<h2 style="font-size:1.05rem">Pack</h2>
+<p id="info" class="note"></p>
+<table id="slots"></table>
+<div class="row"><button id="choose">CHOOSE ANOTHER .LFP FILE</button><input id="file" type="file" accept=".lfp" hidden></div>
+<h2 style="font-size:1.05rem">Send</h2>
+<div class="row"><button id="connect">CONNECT</button><select id="out"><option value="">press CONNECT</option></select><button id="go" class="primary">UPLOAD</button><button id="cancel">CANCEL</button></div>
+<div class="bar"><div id="prog"></div></div><p id="stage" class="note"></p>
+<pre id="log"></pre>
+<script>__PROTO__</script>
+<script>__MIDI__</script>
+<script>
+(function () {
+'use strict';
+const $ = s => document.querySelector(s);
+const MAX_PACK = 536576 - 4 * 4096;      /* user flash minus the two sectors the pack starts after and the two it keeps its settings in */
+const PACK_B64 = "__PACK__", PACK_NAME = "__NAME__";
+const g32 = (b, o) => (b[o] | (b[o + 1] << 8) | (b[o + 2] << 16) | (b[o + 3] << 24)) >>> 0;
+let img = null, midi = null, up = null, busy = false;
+const log = t => { const l = $('#log'); l.textContent = (l.textContent + '\n' + t).trim().split('\n').slice(-10).join('\n'); };
+const setProg = (f, t) => { $('#prog').style.width = f * 100 + '%'; $('#stage').textContent = t || ''; };
+function parse(b) {            /* a version 2 pack (3-bit sounds): fm1 firmware app/lofi_pack.h */
+  if (b.length < 1152 || g32(b, 0) !== 0x3150464c) throw new Error('not a pack file (no LFP1 header)');
+  if ((b[4] | b[5] << 8) !== 2) throw new Error('this is a version ' + (b[4] | b[5] << 8) + ' pack. This page sends oual (version 2) packs only.');
+  const n = b[6] | b[7] << 8; if (n < 1 || n > 32) throw new Error('bad number of sounds: ' + n);
+  if (b.length > MAX_PACK) throw new Error('the pack is ' + b.length + ' bytes; the FM-1 holds ' + MAX_PACK);
+  const rate = g32(b, 32) || 22050, slots = [];
+  for (let i = 0; i < n; i++) { const s = 64 + i * 32, off = g32(b, s), fr = g32(b, s + 4), ls = g32(b, s + 8), le = g32(b, s + 12);
+    if (off < 1152 || off + Math.ceil(fr / 640) * 272 > b.length) throw new Error('sound ' + (i + 1) + ' does not fit inside the file');
+    let nm = ''; for (let k = 0; k < 11 && b[s + 20 + k]; k++) nm += String.fromCharCode(b[s + 20 + k]);
+    slots.push({ nm, fr, ls, le }); }
+  return { n, rate, slots };
+}
+function show(b, label) {
+  const p = parse(b), crc = LF.proto.crc32(b).toString(16).padStart(8, '0');
+  $('#info').textContent = label + ': ' + p.n + ' sounds, ' + (b.length / 1024).toFixed(0) + ' KB of ' + (MAX_PACK / 1024).toFixed(0) + ' KB, 3-bit ' + (p.rate / 1000).toFixed(2) + ' kHz, crc32 ' + crc;
+  const t = $('#slots'); t.replaceChildren(); const head = t.insertRow(); for (const h of ['voice', 'sound', 'seconds', 'loop window']) head.insertCell().outerHTML = '<th>' + h + '</th>';
+  p.slots.forEach((s, i) => { const r = t.insertRow(); r.insertCell().textContent = i + 1; r.insertCell().textContent = s.nm; r.insertCell().textContent = (s.fr / p.rate).toFixed(1);
+    r.insertCell().textContent = s.le === 0xffffffff ? 'whole sound' : Math.round(100 * s.ls / s.fr) + '% to ' + Math.round(100 * s.le / s.fr) + '%'; });
+  img = b; log(label + ' ready');
+}
+function fromB64(s) { const bin = atob(s), o = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) o[i] = bin.charCodeAt(i); return o; }
+function fill() { const sel = $('#out'); sel.replaceChildren(); const outs = midi ? LF.midi.list(midi).outputs : []; if (!outs.length) sel.append(new Option(midi ? 'no MIDI output found' : 'press CONNECT', ''));
+  for (const o of outs) sel.append(new Option(o.name, o.id)); }
+$('#connect').onclick = async () => { try { midi = await LF.midi.open(); midi.onstatechange = fill; fill(); log('MIDI ready: ' + LF.midi.list(midi).outputs.map(o => o.name).join(', ') + '. Pick the FM-1 (it may be called "fm1 community").'); } catch (e) { log(e.message); } };
+$('#go').onclick = async () => {
+  if (busy) return; if (!img) return log('no pack loaded');
+  const out = midi && [...midi.outputs.values()].find(o => o.id === $('#out').value); if (!out) return log('press CONNECT and pick the FM-1 output first');
+  const inp = LF.midi.matchInput(midi, out); if (!inp) return log('no matching MIDI input: the FM-1 has to answer');
+  busy = true; $('#go').disabled = true;
+  try { const link = new LF.midi.Link(out, inp); up = new LF.proto.Uploader(link); log('uploading ' + (img.length / 1024).toFixed(0) + ' KB');
+    await up.send(img, (s, t, stage) => setProg(t ? s / t : 0, stage + ' ' + s + '/' + t));
+    log('done' + (up.blocksResent ? ', ' + up.blocksResent + ' blocks re-sent' : '') + '. The FM-1 now holds this pack: press keys 1 to 10.'); setProg(1, 'done'); link.close();
+  } catch (e) { log('failed: ' + e.message); setProg(0, 'failed'); }
+  busy = false; $('#go').disabled = false;
+};
+$('#cancel').onclick = () => { if (up) up.aborted = true; };
+$('#choose').onclick = () => $('#file').click();
+$('#file').onchange = async ev => { const f = ev.target.files[0]; if (!f) return; try { show(new Uint8Array(await f.arrayBuffer()), f.name); } catch (e) { log(e.message); } };
+try { show(fromB64(PACK_B64), PACK_NAME); } catch (e) { log(e.message); }
+})();
+</script></body></html>

@@ -86,6 +86,11 @@ int main(int argc, char **argv) {
     cap_n = 0; cap_on = 1; tick(40); cap_on = 0; { double p = peak_of(cap, cap_n); CHECK(p > 0.05 && p <= 1.0, "nine voices together stay in range (peak %.3f)", p); }
     for (int k = 0; k < 10; k++) if (le_oual_get(k, OUAL_P_ON)) { ctl.keys = 1u << k; tick(2); ctl.keys = 0; tick(2); }
     cap_n = 0; cap_on = 1; tick(150); cap_on = 0; { double p = peak_of(cap + cap_n - 512, 512); CHECK(p < 0.002, "all voices off: the voices fade out and the reverb tail dies away (%.5f of full scale after 5 s)", p); }
+    /* a burst of changes between two audio blocks is never dropped (the old event ring held 64): 100 toggles of voice 4 leave it off, 101 leave it on */
+    { for (int v = 0; v < 10; v++) if (le_oual_get(v, OUAL_P_ON)) le_oual_set(v, OUAL_P_ON, 0); tick(5);
+      for (int i = 0; i < 100; i++) le_note_on(3, 100); cap_n = 0; cap_on = 1; tick(40); cap_on = 0; CHECK(le_oual_get(3, OUAL_P_ON) == 0 && peak_of(cap, cap_n) < 0.002, "100 toggles of one voice in a burst: off, and silent (peak %.4f)", peak_of(cap, cap_n));
+      for (int i = 0; i < 101; i++) le_note_on(3, 100); cap_n = 0; cap_on = 1; tick(40); cap_on = 0; CHECK(le_oual_get(3, OUAL_P_ON) == 1 && peak_of(cap, cap_n) > 0.01, "101 toggles: on, and sounding (peak %.3f)", peak_of(cap, cap_n));
+      for (int i = 0; i < 300; i++) le_oual_set(3, OUAL_P_CRUSH, i % 1000); le_oual_set(3, OUAL_P_CRUSH, 0); le_oual_set(3, OUAL_P_ON, 0); tick(40); }
     /* SAVE and a power cycle */
     ctl.keys = (1u << 2) | (1u << 5); tick(2); ctl.keys = 0; tick(2); press_btn(6); turn(2, 4); int st0 = le_oual_get(az, OUAL_P_START); le_oual_set(3, OUAL_P_CRUSH, 400); tick(2);
     press_btn(9); turn(2, 1); tick(80); CHECK(!unsaved, "SAVE page: SAVE wrote the ten voices' settings to flash");
