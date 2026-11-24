@@ -1,0 +1,33 @@
+name: Tester report
+description: You flashed (or tried to flash) a build on your own FM-1
+labels: [tester-report]
+body:
+  - type: markdown
+    attributes:
+      value: "Custom firmware is at your own risk. Please make a backup of your stock firmware before flashing."
+  - type: input
+    id: version
+    attributes:
+      label: Firmware version before flashing
+      description: Use the identity check at https://niceocean.studio/lab/oual
+      placeholder: FM-1_016
+    validations: {required: true}
+  - type: input
+    id: bought
+    attributes:
+      label: When did you buy the unit?
+  - type: dropdown
+    id: backup
+    attributes:
+      label: Did you make a backup first?
+      options: ["Yes", "No"]
+    validations: {required: true}
+  - type: input
+    id: build
+    attributes:
+      label: Which build or commit?
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened?
+    validations: {required: true}

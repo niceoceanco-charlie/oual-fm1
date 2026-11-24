@@ -1,4 +1,17 @@
-# oual-fm1 (work in progress, host only)
+# oual-fm1 (work in progress)
+
+A port of Philip Meyer's `oual_qroccss` Max patch (ten looping sample voices with Crush, SRR, Drive, AM, Rand Pos, envelope) to the M-VAVE FM-1,
+to run on the device with no computer in the loop. Hear the sounds and try the blind codec test on the Lab page: **https://niceocean.studio/lab/oual**
+
+**Status.** The 10-voice engine and a 3-bit codec run and are tested on a computer. An early firmware build ran on one FM-1 but did not fit the device's memory; a lighter build (v0.2, 3-voice cap, no reverb) builds in CI and has not yet been confirmed on hardware. Sound is mono and heavily compressed (storage is small), so it will not match the original patch. **Do not flash this yet unless you are ready to recover.**
+
+**Risk.** Custom firmware is at your own risk. Back up your stock firmware first. Recovery routes are in `docs/INSTALL_OUAL.md` and `docs/UPDATE_MODE_RESEARCH.md`. This chip has no proven safe recovery for every failure.
+
+## Give feedback
+- Sound or codec preference: [Sound feedback](../../issues/new?template=sound-feedback.yml)
+- Tried it on your FM-1: [Tester report](../../issues/new?template=tester-report.yml)
+- [Bug](../../issues/new?template=bug.yml) or [Idea](../../issues/new?template=idea.yml)
+- Share what you made: Discussions, "Show and tell"
 
 A port of Philip Meyer's `oual_qroccss` Max patch (ten looping sample voices with Crush, SRR, Drive, AM, Rand Pos, envelope) to the M-VAVE FM-1,
 to run on the device with no computer in the loop. **Status: the 10-voice engine and a 3-bit codec run and are tested on the host. Nothing has been
