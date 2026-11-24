@@ -14,21 +14,24 @@
 #define OUAL_CODEC3_H
 #include <stdint.h>
 #include "oual_tables.h"
+#ifndef OUAL_CODE
+#define OUAL_CODE   /* the firmware defines this as FM1_AUDIO_CODE */
+#endif
 #define OC3_GROUP 20
 #define OC3_CHUNK 320
 #define OC3_SUPER 640
 #define OC3_CODEBYTES 120
 #define OC3_CHUNKBYTES 128
 #define OC3_SUPER_BYTES 272
-static inline int32_t oc3_sat(int32_t x){ return x>32767?32767:(x<-32768?-32768:x); }
+static inline OUAL_CODE int32_t oc3_sat(int32_t x){ return x>32767?32767:(x<-32768?-32768:x); }
 /* Predictor step shared by the decoder and the host encoder. */
-static inline int32_t oc3_pred(const int32_t s[8]){ int64_t a=0; for(int i=0;i<4;i++) a+=(int64_t)s[i]*s[4+i]; return (int32_t)(a>>13); }
-static inline void oc3_upd(int32_t s[8], int32_t pcm, int32_t res){
+static inline OUAL_CODE int32_t oc3_pred(const int32_t s[8]){ int64_t a=0; for(int i=0;i<4;i++) a+=(int64_t)s[i]*s[4+i]; return (int32_t)(a>>13); }
+static inline OUAL_CODE void oc3_upd(int32_t s[8], int32_t pcm, int32_t res){
   int32_t d=res>>4;
   for(int i=0;i<4;i++) s[4+i]=oc3_sat(s[4+i]+(s[i]<0?-d:d));
   s[0]=s[1]; s[1]=s[2]; s[2]=s[3]; s[3]=pcm; }
 /* Decode superblock `idx` of the sound at `data` into out[640]. */
-static inline void oc3_decode_super(const uint8_t *data, uint32_t idx, int16_t *out){
+static inline OUAL_CODE void oc3_decode_super(const uint8_t *data, uint32_t idx, int16_t *out){
   const uint8_t *p=data+(uint32_t)idx*OC3_SUPER_BYTES; int32_t s[8];
   for(int i=0;i<8;i++) s[i]=(int16_t)(p[2*i]|(p[2*i+1]<<8));
   p+=16;

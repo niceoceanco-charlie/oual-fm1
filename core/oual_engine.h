@@ -8,7 +8,10 @@
 #ifndef OUAL_ENGINE_H
 #define OUAL_ENGINE_H
 #include <stdint.h>
-#include "oual_codec3.h"
+#include <stdint.h>
+#ifndef OC3_SUPER
+#define OC3_SUPER 640   /* the codec block, see oual_codec3.h */
+#endif
 #define OUAL_VOICES 10
 #define OUAL_ENV_POINTS 64
 #define OUAL_CACHE_SLOTS 3
@@ -27,7 +30,8 @@ enum oual_param {
   OUAL_P_END,           /* loop end, 0..65536 */
   OUAL_P_ENV_RATE,      /* -1024..1024 (= -1.0..1.0), envelope cycles per loop = 1/|v| */
   OUAL_P_PAN_X,         /* 0..1000 (0 left .. 1 right, equal power) */
-  OUAL_P_LEVEL_Y        /* 0..1000, level = (1 - y)^2 */
+  OUAL_P_LEVEL_Y,       /* 0..1000, level = (1 - y)^2 */
+  OUAL_P_COUNT
 };
 
 typedef struct {
@@ -68,7 +72,7 @@ typedef struct {
 
 void oual_init(oual_engine *e, uint32_t out_rate, uint32_t seed);
 void oual_set_sound(oual_engine *e, int v, const oual_sound *s);
-void oual_set(oual_engine *e, int v, enum oual_param p, int value);
+void oual_set(oual_engine *e, int v, enum oual_param p, int value);   /* safe to call from the audio side */
 void oual_set_envelope(oual_engine *e, int v, const int16_t env[OUAL_ENV_POINTS]);
 /* Interleaved stereo int16, `frames` frames. */
 void oual_render(oual_engine *e, int16_t *out, int frames);
