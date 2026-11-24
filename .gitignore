@@ -1,2 +1,8 @@
-out/
 fw/
+*.ppm
+out/
+tc/
+base/
+firmware/build/
+*.dSYM/
+*.log

@@ -1,0 +1,59 @@
+# TO ENABLE: git mv ci/build.yml .github/workflows/build.yml (pushing a workflow file needs the GitHub token to have the "workflow" scope).
+# Host tests, then the device build with JieLi's Linux toolchain on a GitHub Linux machine (nothing is installed on anyone's computer).
+# The toolchain is downloaded and checked against a SHA-256 before it is unpacked. The build produces a package and a flash page as an artifact:
+# they are NOT to be used on a device until Charlie says "flash" in chat.
+name: build
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683   # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Host tests (engine, codec, integer vs float)
+        run: ./test/run_tests.sh
+      - name: Firmware host harness (the real panel code, synthetic sounds)
+        run: |
+          ./tools/make_test_pack.sh
+          cd firmware
+          gcc -O1 -g -DFM1_HOST_TEST -Wno-misleading-indentation -Wno-unused-result -Wno-unused-function -Isdk/include -Iapp -Iapp/synth -Iapp/board -Ihosttest \
+              -o /tmp/oual_host hosttest/oual_host.c app/lofi_engine.c -lm
+          cd hosttest && /tmp/oual_host ../../out/ci_test.lfp
+      - name: JieLi Linux toolchain (pinned by SHA-256)
+        run: |
+          mkdir -p tc
+          curl -fL --retry 3 -o tc/tc.tar.xz https://jl-update.oss-cn-shenzhen.aliyuncs.com/jieli-linux-toolchains-20260730.1.tar.xz
+          echo "a1545cddbc451a06bac43eb5cd96d831470c42a97c5c0b1f98879a20fc7647bd  tc/tc.tar.xz" | sha256sum -c -
+          tar -xJf tc/tc.tar.xz -C tc
+          TC=$(ls -d "$PWD"/tc/jieli-linux-toolchains-* | head -1); echo "TC=$TC" >> "$GITHUB_ENV"; ls "$TC"
+      - name: Device build of the upstream sampler (the baseline for sizes)
+        run: |
+          git clone -q https://github.com/ferluht/fm1-lofi-sampler base
+          git -C base checkout -q f21410d006896d83fbe152ba35c93d2543e1ef60
+          python3 build/build_fw.py base/firmware "$TC" 2>&1 | tee base-build.log | tail -25
+      - name: Device build of the oual firmware
+        run: python3 build/build_fw.py firmware "$TC" 2>&1 | tee oual-build.log | tail -40
+      - name: Sizes
+        if: always()
+        run: |
+          { echo '### Image sizes (limit 453921 bytes)'; echo; echo '```'; grep -h "app image" base-build.log oual-build.log || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
+        if: always()
+        with:
+          name: oual-device-build
+          retention-days: 14
+          path: |
+            firmware/build/dx7/generated/FM1_OFFICIAL_OPEN.fwsc
+            firmware/build/FM1-Lofi-Workbench.html
+            firmware/build/dx7/sdk.map
+            base-build.log
+            oual-build.log

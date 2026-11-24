@@ -29,3 +29,8 @@ Credits in that patch: "Original: anonymous, 2007. Update 1: Philip Meyer, 2024.
 ## ferluht/fm1-lofi-sampler
 
 GPL-3.0. The 3-bit codec here follows its documented format and encoder search; see its docs/CODEC.md and tools/lofi_codec.c. That project's codec derives from SEA (Dani Biro, MIT).
+
+## Firmware base: ferluht/fm1-lofi-sampler (commit f21410d)
+The `firmware/` directory is that project's firmware tree (GPL-3.0 with the FM-1 SDK linking exception, as M-VAVE's `fm1_open` it is forked from), with the oual
+changes on top. Its own notices stay in `firmware/THIRD_PARTY.md` and `firmware/LICENSE.md`; the closed engine library and boot resources are M-VAVE's and keep their terms.
+`build/build_fw.py` is that project's `tools/build_fw.py` changed to run JieLi's Linux toolchain natively.
