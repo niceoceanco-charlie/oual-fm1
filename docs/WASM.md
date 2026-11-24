@@ -48,3 +48,6 @@ Without the page API, `OualCore` runs the same engine in Node or on any thread: 
 - The engine plays sounds stored at their own rate (22.05 kHz from the device pack): that is the device's quality, not the browser's.
 - Safari / iPhone: the module is plain WebAssembly (no threads, no SIMD) and the worklet is a classic script, but this has not been run on Safari yet.
 - Encoding a long sound blocks the page's main thread for as long as it takes; do it before play, or show a progress state.
+
+## Testing in a browser without making noise
+Automated or by-hand browser checks must never open a real audio output. Use `OfflineAudioContext` (it renders to a buffer and plays nothing), do not connect to a live `AudioContext.destination`, and close the page, the browser tab and any local server when the check ends. The check used for this build (an `OfflineAudioContext` with the worklet, a pack and a tone) is the pattern: create `new OfflineAudioContext(2, frames, 44100)`, `await Oual.create(ctx)`, `oual.connect(ctx.destination)`, load, set voices on, `await ctx.startRendering()`, read the peak. A page that must play live sound needs a visible Stop control and starts only on a click.
