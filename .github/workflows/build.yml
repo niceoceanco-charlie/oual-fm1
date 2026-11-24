@@ -44,10 +44,19 @@ jobs:
           python3 build/build_fw.py base/firmware "$TC" 2>&1 | tee base-build.log | tail -25
       - name: Device build of the oual firmware
         run: python3 build/build_fw.py firmware "$TC" --cflags "-DOUAL_ONLY" 2>&1 | tee oual-build.log | tail -40
-      - name: Sizes
+      - name: Sizes and the heap that is left
         if: always()
         run: |
-          { echo '### Image sizes (limit 453921 bytes)'; echo; echo '```'; grep -h "app image" base-build.log oual-build.log || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo '### Image sizes (limit 453921 bytes)'; echo; echo '```'; grep -h "app image" base-build.log oual-build.log || true; echo '```'
+            echo '### Heap left after the static data (HEAP_END - HEAP_BEGIN); v0.9.1 and v0.9.2 bricked a device with 40 KB left, v0.9.3 has about 105 KB'; echo; echo '```'
+            for d in base/firmware firmware; do
+              echo "== $d"; "$TC/common/bin/objdump" -t "$d/build/dx7/sdk.elf" | grep -E " (_HEAP_BEGIN|_HEAP_END|_MALLOC_SIZE)$" || true
+              "$TC/common/bin/objdump" -t "$d/build/dx7/sdk.elf" | awk '$NF=="_HEAP_BEGIN"{b=strtonum("0x"$1)} $NF=="_HEAP_END"{e=strtonum("0x"$1)} END{printf "heap bytes: %d\n", e-b}' || true
+              "$TC/common/bin/objdump" -h "$d/build/dx7/sdk.elf" | grep -E "ram0_data|ram0_bss|\.bss|\.data|cache_ram" || true
+            done
+            echo '```'
+          } | tee heap.txt >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02   # v4.6.2
         if: always()
         with:
@@ -59,3 +68,4 @@ jobs:
             firmware/build/dx7/sdk.map
             base-build.log
             oual-build.log
+            heap.txt
