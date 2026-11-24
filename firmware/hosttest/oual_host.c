@@ -116,7 +116,7 @@ int main(int argc, char **argv) {
     CHECK(le_is_oual() && le_oual_get(3, OUAL_P_CRUSH) == 400 && le_oual_get(2, OUAL_P_ON) == 1 && le_oual_get(5, OUAL_P_ON) == 1 && le_oual_get(az, OUAL_P_START) >= 0 && st0 >= 0, "after a power cycle the settings are back (voice 4 crush %d, voices 3 and 6 on: %d %d)", le_oual_get(3, OUAL_P_CRUSH), le_oual_get(2, OUAL_P_ON), le_oual_get(5, OUAL_P_ON));
     CHECK(on_before == 4 && le_voices_active() == on_before && le_oual_cap() == 4, "bug A: the saved cap of 4 comes back with all its voices (%u on of %u saved, cap %d)", le_voices_active(), on_before, le_oual_cap());
     { /* bug B: overruns counted before the first poll must not drop a voice */
-      cpu_seeded = 0; cpu_dropped = 0; unsigned before = le_voices_active(); fake_over += 9; tick(40);
+      cpu_seeded = 0; cpu_over_seen = 0; cpu_dropped = 0; unsigned before = le_voices_active(); fake_over += 9; tick(40);
       CHECK(le_voices_active() == before && cpu_dropped == 0, "bug B: overruns counted at boot do not drop a voice (%u on, dropped %u)", le_voices_active(), cpu_dropped); }
     CHECK(calls_max <= 60 && px_max <= 13000, "no single control tick draws more than 60 screen calls / 13000 pixels (max %lu calls, %lu pixels)", calls_max, px_max);
     printf("%s (%d failures)\n", fails ? "SOME CHECKS FAILED" : "ALL CHECKS PASSED", fails);
