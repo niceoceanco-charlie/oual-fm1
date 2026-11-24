@@ -55,8 +55,12 @@ function show(b, label) {
   img = b; log(label + ' ready');
 }
 function fromB64(s) { const bin = atob(s), o = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) o[i] = bin.charCodeAt(i); return o; }
+let chosen = '';      /* the port the user picked: a MIDI state change rebuilds the list, which must not undo the choice */
 function fill() { const sel = $('#out'); sel.replaceChildren(); const outs = midi ? LF.midi.list(midi).outputs : []; if (!outs.length) sel.append(new Option(midi ? 'no MIDI output found' : 'press CONNECT', ''));
-  for (const o of outs) sel.append(new Option(o.name, o.id)); }
+  for (const o of outs) sel.append(new Option(o.name, o.id));
+  const ids = outs.map(o => o.id), fm = outs.find(o => /fm-?1/i.test(o.name));
+  if (ids.includes(chosen)) sel.value = chosen; else if (fm) { sel.value = fm.id; chosen = fm.id; } }      /* keep the choice; with none yet, an output called FM1 / FM-1 is picked */
+$('#out').onchange = e => { chosen = e.target.value; };
 $('#connect').onclick = async () => { try { midi = await LF.midi.open(); midi.onstatechange = fill; fill(); log('MIDI ready: ' + LF.midi.list(midi).outputs.map(o => o.name).join(', ') + '. Pick the FM-1 (it may be called "fm1 community").'); } catch (e) { log(e.message); } };
 $('#go').onclick = async () => {
   if (busy) return; if (!img) return log('no pack loaded');

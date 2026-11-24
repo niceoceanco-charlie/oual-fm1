@@ -85,15 +85,15 @@ int main(int argc, char **argv) {
 #else
     CHECK(le_oual_get_reverb() == 1000, "the reverb of the patch is on at 100%% by default");
 #endif
-    CHECK(le_oual_cap() == 3, "default cap: 3 voices at once (%d)", le_oual_cap()); turn(3, 1); CHECK(le_oual_cap() == 4, "GLO K2 raises the cap (%d)", le_oual_cap()); turn(3, -1); CHECK(le_oual_cap() == 3, "and lowers it (%d)", le_oual_cap());
+    CHECK(le_oual_cap() == 2, "default cap: 2 voices at once (%d)", le_oual_cap()); turn(3, 1); CHECK(le_oual_cap() == 3, "GLO K2 raises the cap (%d)", le_oual_cap()); turn(3, -1); CHECK(le_oual_cap() == 2, "and lowers it (%d)", le_oual_cap());
     fake_over = 2; tick(40); CHECK(cpu_avg == 10 && cpu_pk == 25 && cpu_over == 2, "GLO shows the load: average %u%%, longest block %u%%, %u overruns", cpu_avg, cpu_pk, cpu_over); shot("oual_glo");
     press_btn(3); turn(0, 1); CHECK(az == 1, "SEL: SELECT moves to voice 2 (az %d)", az); turn(2, 1); CHECK(le_oual_get(1, OUAL_P_ON) == 1, "SEL: K1 switches voice 2 on"); shot("oual_sel"); turn(2, -1); turn(0, -1);
     press_btn(4); shot("oual_env"); press_btn(4); press_btn(8);
     /* voices keep playing while the pages change, and every key switches its own voice */
     for (int k = 0; k < 10; k++) if (le_oual_get(k, OUAL_P_ON)) { ctl.keys = 1u << k; tick(2); ctl.keys = 0; tick(2); } tick(5);
     { int before = le_oual_refused(); for (int k = 0; k < 6; k++) { ctl.keys = 1u << k; tick(2); ctl.keys = 0; tick(2); } int n = 0; for (int v = 0; v < 10; v++) n += le_oual_get(v, OUAL_P_ON);
-      CHECK(n == 3 && le_oual_refused() == before + 3, "cap 3: keys 1..6 switch on only the first three (%d on, %d refused)", n, le_oual_refused() - before);
-      CHECK(!strcmp(msg_text, "MAX 3 VOICES"), "and the screen says so (\"%s\")", msg_text); shot("oual_cap"); }
+      CHECK(n == 2 && le_oual_refused() == before + 4, "cap 2: keys 1..6 switch on only the first two (%d on, %d refused)", n, le_oual_refused() - before);
+      CHECK(!strcmp(msg_text, "MAX 2 VOICES"), "and the screen says so (\"%s\")", msg_text); shot("oual_cap"); }
     le_oual_set_cap(10); for (int k = 0; k < 10; k++) if (!le_oual_get(k, OUAL_P_ON)) { ctl.keys = 1u << k; tick(2); ctl.keys = 0; tick(2); } int on = 0; for (int v = 0; v < 10; v++) on += le_oual_get(v, OUAL_P_ON);
     CHECK(on == 10, "with the cap at 10, all ten voices switch on (%d)", on);
     cap_n = 0; cap_on = 1; tick(40); cap_on = 0; { double p = peak_of(cap, cap_n); CHECK(p > 0.05 && p <= 1.0, "ten voices together stay in range (peak %.3f)", p); }
@@ -111,9 +111,13 @@ int main(int argc, char **argv) {
       for (int i = 0; i < 300; i++) le_oual_set(3, OUAL_P_CRUSH, i % 1000); le_oual_set(3, OUAL_P_CRUSH, 0); le_oual_set(3, OUAL_P_ON, 0); tick(40); }
     /* SAVE and a power cycle */
     ctl.keys = (1u << 2) | (1u << 5); tick(2); ctl.keys = 0; tick(2); press_btn(6); turn(2, 4); int st0 = le_oual_get(az, OUAL_P_START); le_oual_set(3, OUAL_P_CRUSH, 400); tick(2);
-    le_oual_set_cap(4); press_btn(9); turn(2, 1); tick(80); CHECK(!unsaved, "SAVE page: SAVE wrote the ten voices' settings to flash");
+    le_oual_set_cap(4); for (int v = 0; v < 10 && le_voices_active() < 4; v++) if (!le_oual_get(v, OUAL_P_ON)) le_oual_set(v, OUAL_P_ON, 1); tick(5); unsigned on_before = le_voices_active(); press_btn(9); turn(2, 1); tick(80); CHECK(!unsaved, "SAVE page: SAVE wrote the ten voices' settings to flash");
     groove_screen_init(); tick(5); tick(60);
     CHECK(le_is_oual() && le_oual_get(3, OUAL_P_CRUSH) == 400 && le_oual_get(2, OUAL_P_ON) == 1 && le_oual_get(5, OUAL_P_ON) == 1 && le_oual_get(az, OUAL_P_START) >= 0 && st0 >= 0, "after a power cycle the settings are back (voice 4 crush %d, voices 3 and 6 on: %d %d)", le_oual_get(3, OUAL_P_CRUSH), le_oual_get(2, OUAL_P_ON), le_oual_get(5, OUAL_P_ON));
+    CHECK(on_before == 4 && le_voices_active() == on_before && le_oual_cap() == 4, "bug A: the saved cap of 4 comes back with all its voices (%u on of %u saved, cap %d)", le_voices_active(), on_before, le_oual_cap());
+    { /* bug B: overruns counted before the first poll must not drop a voice */
+      cpu_seeded = 0; cpu_dropped = 0; unsigned before = le_voices_active(); fake_over += 9; tick(40);
+      CHECK(le_voices_active() == before && cpu_dropped == 0, "bug B: overruns counted at boot do not drop a voice (%u on, dropped %u)", le_voices_active(), cpu_dropped); }
     CHECK(calls_max <= 60 && px_max <= 13000, "no single control tick draws more than 60 screen calls / 13000 pixels (max %lu calls, %lu pixels)", calls_max, px_max);
     printf("%s (%d failures)\n", fails ? "SOME CHECKS FAILED" : "ALL CHECKS PASSED", fails);
     return fails ? 1 : 0;

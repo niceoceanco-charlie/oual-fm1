@@ -557,7 +557,7 @@ static void draw_vis(void)
     case PG_HOME: draw_strip(in, 32); draw_zone_line(58); draw_wave(74, 70, 0); break;
     case PG_EDIT: draw_zone_line(30); draw_wave(46, 98, 1); break;
     case PG_FX: draw_zone_line(30); draw_text(8, 60, 1, "CRUSH  SRR  DRIVE  AM", COL_DIM, COL_BG); draw_text(8, 76, 1, "OF THE SELECTED VOICE", COL_DIM, COL_BG); break;
-    case PG_GLO: draw_text(8, 50, 3, "OUAL V0.2", COL_ACC, COL_BG); draw_text(8, 90, 1, "LOAD: AVERAGE / LONGEST BLOCK", COL_DIM, COL_BG); draw_text(8, 104, 1, "K3 OR K4: COUNT OVERRUNS AGAIN", COL_DIM, COL_BG); break;
+    case PG_GLO: draw_text(8, 50, 3, "OUAL 0.2.1", COL_ACC, COL_BG); draw_text(8, 90, 1, "LOAD: AVERAGE / LONGEST BLOCK", COL_DIM, COL_BG); draw_text(8, 104, 1, "K3 OR K4: COUNT OVERRUNS AGAIN", COL_DIM, COL_BG); break;
     case PG_SAVE: draw_text(8, 60, 1, "TURN K1 TO SAVE THE VOICES", COL_DIM, COL_BG); if (msg_until) draw_text(8, 140, 1, msg_text, COL_ACC, COL_BG); break;
     case PG_SEL: {
         draw_strip(in, 32); unsigned idx[32], cnt = 0, pos = 0; for (unsigned i = 0; i < in->n_slots && cnt < 32; ++i) if (in_bank(i)) { if ((int)i == az) pos = cnt; idx[cnt++] = i; }

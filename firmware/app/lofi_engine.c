@@ -56,7 +56,7 @@ static oual_engine o_eng; static uint8_t o_mode;
 /* oual mode: the control side writes the settings here (aligned words, one writer); the audio side compares them with what it has applied (o_app) at the start of every block.
  * Nothing is queued, so a fast burst of key presses or knob turns cannot drop a change. */
 static volatile int32_t o_ctl[OUAL_VOICES][OUAL_P_COUNT]; static volatile int32_t o_rvb;
-static uint8_t o_cap = 3, o_refused; static uint32_t o_stamp[OUAL_VOICES], o_stamp_n;      /* voice cap: how many voices may sound at once; stamp = when a voice was switched on */ static int32_t o_app[OUAL_VOICES][OUAL_P_COUNT], o_rvb_app;   /* oual mode: the engine and the control side's copy of every voice's settings */
+static uint8_t o_cap = 2, o_refused; static uint32_t o_stamp[OUAL_VOICES], o_stamp_n;      /* voice cap: how many voices may sound at once; stamp = when a voice was switched on */ static int32_t o_app[OUAL_VOICES][OUAL_P_COUNT], o_rvb_app;   /* oual mode: the engine and the control side's copy of every voice's settings */
 #ifndef OUAL_ONLY
 typedef struct { uint16_t tick; uint8_t note, vel, on, fresh, pass, pad; } sev_t;
 static struct {
@@ -152,7 +152,7 @@ int le_bind(const uint8_t *pack, uint32_t bytes)
     if (lfp_parse(pack, bytes, &g.info)) return -1;
     for (unsigned i = 0; i < LFP_SLOTS; i++) le_zone_defaults(i);
     if (g.info.ver == 2) {      /* oual pack: sounds are 3-bit, slot n = voice n */
-        oual_init(&o_eng, LE_OUT_RATE, 1); o_cap = 3; o_refused = 0; o_stamp_n = 0; for (unsigned k = 0; k < OUAL_VOICES; k++) o_stamp[k] = 0;
+        oual_init(&o_eng, LE_OUT_RATE, 1); o_cap = 2; o_refused = 0; o_stamp_n = 0; for (unsigned k = 0; k < OUAL_VOICES; k++) o_stamp[k] = 0;
 #ifdef OUAL_NO_REVERB
         o_rvb = 0; o_rvb_app = 0;
 #else
@@ -828,8 +828,9 @@ int le_settings_import(const uint8_t *b, unsigned len)
 {
     if (o_mode) {
         if (len < 6 + OUAL_VOICES * OUAL_P_COUNT * 4 + 1 || b[0] != 'L' || b[1] != 'F' || b[2] != 'S' || b[3] != 'T' || b[4] != 3 || b[5] != OUAL_VOICES) return -1;
+        { unsigned oc = 6 + OUAL_VOICES * OUAL_P_COUNT * 4 + 1 + 2; if (len >= oc + 1 && b[oc] >= 1 && b[oc] <= OUAL_VOICES) le_oual_set_cap(b[oc]); }      /* the saved cap goes in FIRST: voices are switched on below and would be refused under the default cap */
         unsigned o = 6; for (unsigned v = 0; v < OUAL_VOICES; v++) for (unsigned k = 0; k < OUAL_P_COUNT; k++) { uint32_t x = 0; for (unsigned j = 0; j < 4; j++) x |= (uint32_t)b[o++] << (8 * j); le_oual_set(v, k, (int32_t)x); }
-        le_set_level(b[o++]); if (len >= o + 2) { le_oual_set_reverb(b[o] | b[o + 1] << 8); o += 2; } if (len >= o + 1 && b[o] >= 1 && b[o] <= OUAL_VOICES) le_oual_set_cap(b[o]); return 0;
+        le_set_level(b[o++]); if (len >= o + 2) { le_oual_set_reverb(b[o] | b[o + 1] << 8); o += 2; } return 0;
     }
     if (len < 6 || b[0] != 'L' || b[1] != 'F' || b[2] != 'S' || b[3] != 'T' || b[4] != 2 || !g.bound) return -1;
     unsigned n = b[5], o = 6; if (n != g.info.n_slots || len < o + n * 24 + 24) return -2;
