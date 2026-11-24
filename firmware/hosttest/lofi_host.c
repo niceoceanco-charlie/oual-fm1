@@ -27,6 +27,9 @@ int fm1_flash_read(uint32_t o, void *p, size_t n) { if (o + n > FLASH_BYTES) ret
 int fm1_flash_erase(uint32_t o) { memset(flash + o, 0xff, 4096); return 0; }
 int fm1_flash_write(uint32_t o, const void *p, size_t n) { const uint8_t *s = p; for (size_t i = 0; i < n; i++) { if ((flash[o + i] & s[i]) != s[i]) { puts("FLASH WRITE OVER DATA"); exit(1); } flash[o + i] &= s[i]; } return 0; }
 const uint8_t *fm1_flash_map(uint32_t o, size_t n) { return o + n <= FLASH_BYTES ? flash + o : NULL; }
+uint32_t fm1_audio_block_ticks(void) { return 1000; }
+void fm1_audio_stats_read(struct fm1_audio_stats *s) { memset(s, 0, sizeof *s); s->peak_ticks = 250; s->overruns = 2; }   /* host: a made-up 25% load and 2 overruns */
+void fm1_audio_stats_reset_peak(void) {}
 static uint8_t last_reply[LF_MAXMSG]; static size_t last_reply_n;
 int fm1_midi_send_port(unsigned port, const uint8_t *m, size_t n) { (void)port; memcpy(last_reply, m, n); last_reply_n = n; return 0; }
 

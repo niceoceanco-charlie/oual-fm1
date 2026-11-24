@@ -108,6 +108,13 @@ int fm1_audio_start(void)
     initialized = 1;
     return 0;
 }
+uint32_t fm1_audio_block_ticks(void) { return block_ticks; }          /* timer ticks in one 128-frame block: peak_ticks / this = the load of the audio interrupt */
+void fm1_audio_stats_reset_peak(void)
+{
+    uint32_t flags = fm1_device_irq_save();
+    statistics.peak_ticks = 0; statistics.overruns = 0; statistics.short_intervals = 0;
+    fm1_device_irq_restore(flags);
+}
 void fm1_audio_stats_read(struct fm1_audio_stats *out)
 {
     if (!out) return;

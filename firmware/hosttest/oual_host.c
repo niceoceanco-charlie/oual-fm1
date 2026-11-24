@@ -27,6 +27,9 @@ int fm1_flash_read(uint32_t o, void *p, size_t n) { if (o + n > FLASH_BYTES) ret
 int fm1_flash_erase(uint32_t o) { memset(flash + o, 0xff, 4096); return 0; }
 int fm1_flash_write(uint32_t o, const void *p, size_t n) { const uint8_t *s = p; for (size_t i = 0; i < n; i++) { if ((flash[o + i] & s[i]) != s[i]) { puts("FLASH WRITE OVER DATA"); exit(1); } flash[o + i] &= s[i]; } return 0; }
 const uint8_t *fm1_flash_map(uint32_t o, size_t n) { return o + n <= FLASH_BYTES ? flash + o : NULL; }
+uint32_t fm1_audio_block_ticks(void) { return 1000; }
+void fm1_audio_stats_read(struct fm1_audio_stats *s) { memset(s, 0, sizeof *s); s->peak_ticks = 250; s->overruns = 2; }   /* host: a made-up 25% load and 2 overruns */
+void fm1_audio_stats_reset_peak(void) {}
 static uint8_t last_reply[LF_MAXMSG]; static size_t last_reply_n;
 int fm1_midi_send_port(unsigned port, const uint8_t *m, size_t n) { (void)port; memcpy(last_reply, m, n); last_reply_n = n; return 0; }
 
@@ -65,7 +68,7 @@ int main(int argc, char **argv) {
     { static oual_engine ref; oual_init(&ref, 44100, 1); const lfp_info_t *in = le_info();
       for (int i = 0; i < OUAL_VOICES; i++) { oual_sound sn = {le_pack() + in->slot[i].offset, in->slot[i].frames, in->src_rate}; oual_set_sound(&ref, i, &sn);
         for (unsigned k = 0; k < OUAL_P_COUNT; k++) oual_set(&ref, i, (enum oual_param)k, le_oual_get(i, k)); oual_set(&ref, i, OUAL_P_ON, 0); }
-      oual_set(&ref, 0, OUAL_P_ON, 1); ref.master_q15 = 26214;
+      oual_set(&ref, 0, OUAL_P_ON, 1); ref.master_q15 = 26214; oual_set_reverb(&ref, le_oual_get_reverb());
       unsigned first = 0; while (first < cap_n && cap[first] == 0) first += 2; first -= first % 256;       /* the block where the voice started */
       int16_t out[256]; unsigned bad = 0, blocks = 0; for (unsigned b = first; b + 256 <= cap_n && blocks < 60; b += 256, blocks++) { oual_render(&ref, out, 128); for (unsigned i = 0; i < 256; i++) if (cap[b + i] != (int32_t)out[i] * 256) bad++; }
       CHECK(bad == 0, "the firmware's output equals the standalone engine's, sample for sample (%u blocks, %u different samples)", blocks, bad); }
@@ -74,14 +77,15 @@ int main(int argc, char **argv) {
     press_btn(2); turn(2, 20); turn(3, 10); turn(4, 30); turn(5, 5); CHECK(le_oual_get(0, OUAL_P_CRUSH) == 400 && le_oual_get(0, OUAL_P_SRR) == 200 && le_oual_get(0, OUAL_P_DRIVE) == 600 && le_oual_get(0, OUAL_P_AM) == 100, "FX: crush %d srr %d drive %d am %d", le_oual_get(0, OUAL_P_CRUSH), le_oual_get(0, OUAL_P_SRR), le_oual_get(0, OUAL_P_DRIVE), le_oual_get(0, OUAL_P_AM)); shot("oual_fx");
     press_btn(6); turn(2, 4); turn(3, -4); turn(4, -10); turn(5, -20); shot("oual_edit");
     CHECK(le_oual_get(0, OUAL_P_START) > 1000 && le_oual_get(0, OUAL_P_END) < 65536 && le_oual_get(0, OUAL_P_ENV_RATE) < 1024, "EDIT: start %d end %d pan %d env rate %d", le_oual_get(0, OUAL_P_START), le_oual_get(0, OUAL_P_END), le_oual_get(0, OUAL_P_PAN_X), le_oual_get(0, OUAL_P_ENV_RATE));
-    press_btn(7); turn(2, -20); CHECK(le_get_level() == 60, "GLO: master level %u", le_get_level()); shot("oual_glo");
+    press_btn(7); turn(2, -20); CHECK(le_get_level() == 60, "GLO: master level %u", le_get_level());
+    CHECK(le_oual_get_reverb() == 1000, "the reverb of the patch is on at 100%% by default"); turn(3, -5); CHECK(le_oual_get_reverb() == 900, "GLO K2 sets the reverb (%d)", le_oual_get_reverb()); tick(40); CHECK(cpu_pct == 25 && cpu_over == 2, "GLO shows the audio load (%u%%, %u overruns)", cpu_pct, cpu_over); shot("oual_glo"); turn(3, 5);
     press_btn(3); turn(0, 1); CHECK(az == 1, "SEL: SELECT moves to voice 2 (az %d)", az); turn(2, 1); CHECK(le_oual_get(1, OUAL_P_ON) == 1, "SEL: K1 switches voice 2 on"); shot("oual_sel"); turn(2, -1); turn(0, -1);
     press_btn(4); shot("oual_env"); press_btn(4); press_btn(8);
     /* voices keep playing while the pages change, and every key switches its own voice */
     for (int k = 0; k < 10; k++) { ctl.keys = 1u << k; tick(2); ctl.keys = 0; tick(2); } int on = 0; for (int v = 0; v < 10; v++) on += le_oual_get(v, OUAL_P_ON); CHECK(on == 9, "keys 1..10 each toggle their voice (voice 1 was on: now %d of 10 on)", on);
     cap_n = 0; cap_on = 1; tick(40); cap_on = 0; { double p = peak_of(cap, cap_n); CHECK(p > 0.05 && p <= 1.0, "nine voices together stay in range (peak %.3f)", p); }
     for (int k = 0; k < 10; k++) if (le_oual_get(k, OUAL_P_ON)) { ctl.keys = 1u << k; tick(2); ctl.keys = 0; tick(2); }
-    cap_n = 0; cap_on = 1; tick(60); cap_on = 0; CHECK(peak_of(cap + cap_n - 512, 512) == 0.0, "all voices off: the output fades to silence");
+    cap_n = 0; cap_on = 1; tick(150); cap_on = 0; { double p = peak_of(cap + cap_n - 512, 512); CHECK(p < 0.002, "all voices off: the voices fade out and the reverb tail dies away (%.5f of full scale after 5 s)", p); }
     /* SAVE and a power cycle */
     ctl.keys = (1u << 2) | (1u << 5); tick(2); ctl.keys = 0; tick(2); press_btn(6); turn(2, 4); int st0 = le_oual_get(az, OUAL_P_START); le_oual_set(3, OUAL_P_CRUSH, 400); tick(2);
     press_btn(9); turn(2, 1); tick(80); CHECK(!unsaved, "SAVE page: SAVE wrote the ten voices' settings to flash");

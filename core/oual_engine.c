@@ -53,6 +53,8 @@ static OUAL_CODE void oual_new_window(oual_voice *v){
 
 void oual_init(oual_engine *e, uint32_t out_rate, uint32_t seed){
   memset(e,0,sizeof *e); e->out_rate=out_rate; e->master_q15=26214; /* 0.8 */
+  { uint32_t r=out_rate?out_rate:44100; e->rvb_n0=(uint16_t)(r*65/1000); e->rvb_n1=(uint16_t)(r*67/1000); e->rvb_n2=(uint16_t)(r*85/1000);
+    if(e->rvb_n0>OUAL_RVB_N0)e->rvb_n0=OUAL_RVB_N0; if(e->rvb_n1>OUAL_RVB_N1)e->rvb_n1=OUAL_RVB_N1; if(e->rvb_n2>OUAL_RVB_N2)e->rvb_n2=OUAL_RVB_N2; }
   for(int i=0;i<OUAL_VOICES;i++){ oual_voice *v=&e->v[i]; v->rng=seed*2654435761u+i*40503u+1; if(!v->rng)v->rng=1;
     v->end_q16=65536; v->pan_x=500; v->level_y=500; v->env_rate=1024; for(int k=0;k<OUAL_ENV_POINTS;k++) v->env[k]=32767;
     for(int s=0;s<OUAL_CACHE_SLOTS;s++) v->slot[s].block=-1; v->dirty=1; } }
@@ -117,10 +119,30 @@ static OUAL_CODE void oual_render_voice(oual_engine *e, oual_voice *v, int32_t *
       oual_new_window(v); v->pos=((uint64_t)v->ls<<32)+over; if((int32_t)(v->pos>>32)>=v->le) v->pos=(uint64_t)v->ls<<32;
       v->ph=(uint32_t)(((over>>16)/(uint64_t)(v->le-v->ls))<<16); v->env_ph=0; } } }
 
+/* ---- the reverb: in -> *0.14 -> reson~ -> three allpass filters (y = c*w + w[n-D], w = x - c*w[n-D], c = 0.7) -> *0.5, added to the dry signal ---- */
+OUAL_CODE void oual_set_reverb(oual_engine *e, int permille){ e->rvb_permille = permille < 0 ? 0 : permille > 1000 ? 1000 : permille; }
+static OUAL_CODE int32_t oual_ap(int16_t *d, uint16_t *ix, unsigned n, int32_t x){
+  unsigned i=*ix; int32_t wd=d[i]; int32_t w=x-((22938*wd)>>15); if(w>32767)w=32767; if(w<-32768)w=-32768;
+  int32_t y=((22938*w)>>15)+wd; d[i]=(int16_t)w; if(++i>=n) i=0; *ix=(uint16_t)i; return y>32767?32767:y<-32768?-32768:y; }
+static OUAL_CODE __attribute__((noinline)) void oual_reson_block(oual_rvb_ch *c, const int32_t *in, int32_t *out, int n, int stride){   /* 64-bit products kept out of line */
+  int32_t y1=c->y1, y2=c->y2;
+  for(int k=0;k<n;k++){
+    int32_t x=in[k*stride]>>4;                        /* the mix is up to 19 bits; the wet path works at 16 */
+    int32_t y=(int32_t)(((int64_t)OUAL_RVB_A0*x)>>16)+(int32_t)(((int64_t)OUAL_RVB_B1*y1)>>24)+(int32_t)(((int64_t)OUAL_RVB_B2*y2)>>24);
+    y2=y1; y1=y; int32_t o=y>>8; out[k]=o>32767?32767:o<-32768?-32768:o; }
+  c->y1=y1; c->y2=y2; }
+OUAL_CODE void oual_rvb_run(oual_engine *e, int32_t *mix, int frames){
+  int32_t tmp[512];
+  for(int ch=0;ch<2;ch++){
+    oual_rvb_ch *c=&e->rvb[ch]; oual_reson_block(c,mix+ch,tmp,frames,2);
+    for(int k=0;k<frames;k++){
+      int32_t w=oual_ap(c->d0,&c->i0,e->rvb_n0,tmp[k]); w=oual_ap(c->d1,&c->i1,e->rvb_n1,w); w=oual_ap(c->d2,&c->i2,e->rvb_n2,w);
+      mix[2*k+ch]+=(w*e->rvb_permille/1000)*8; } } }      /* *0.5 and back to the mix scale: (w * 16) / 2 */
 OUAL_CODE void oual_render(oual_engine *e, int16_t *out, int frames){
   static int32_t mix[2*512]; 
   while(frames>0){ int n=frames>512?512:frames; for(int i=0;i<2*n;i++) mix[i]=0;   /* no libc in the audio interrupt */
     for(int i=0;i<OUAL_VOICES;i++) oual_render_voice(e,&e->v[i],mix,n);
+    if(e->rvb_permille) oual_rvb_run(e,mix,n);
     for(int i=0;i<2*n;i++){ int32_t x=((mix[i]*(e->master_q15>>4))>>11), a=x<0?-x:x;   /* 32-bit only: 10 voices (19 bits) x 11 bits */  /* limiter: linear to 0.7, knee to 1.0 at 1.3 */
       if(a>42598) a=32767; else if(a>22938){ int32_t d=a-22938; a=a-((((d*d)>>15)*27307)>>15); if(a>32767)a=32767; }
       out[i]=(int16_t)(x<0?-a:a); }

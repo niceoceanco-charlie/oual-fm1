@@ -38,8 +38,7 @@ upstream sampler 48.3 KB of code and constants, RAM 141 KB; oual full (both mode
 the sampler harness still passes. The 4.8 KB pitch table can still shrink.
 
 ## Still to do
-The web-editor uploader for version 2 packs (the pack is built on the host), voices that share one stored sound, the envelope shape editor, the reverb (6 allpass and 2 resonators on the multichannel
-output of the main patch, per the card), the measurement build, and the first device build in CI.
+The reverb is in (see PORT_NOTES.md) and the GLO page shows the CPU load. The web-editor uploader for version 2 packs (the pack is built on the host), voices that share one stored sound, the envelope shape editor, the measurement run on the device, and the first device build in CI.
 
 ## The measurement build (needs Charlie's explicit "flash")
 `app/board/audio.c` already keeps `statistics.peak_ticks` against `block_ticks`: the peak time used by one 128-frame render. A measurement build would show that figure with 1, 5 and 10 voices on,

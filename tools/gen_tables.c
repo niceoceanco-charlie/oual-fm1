@@ -17,5 +17,10 @@ int main(void){
   printf("static OUAL_DATA const int16_t oual_dqt3[16*8] = {");
   for(int s=0;s<16;s++){ double w=2.0*pow(1.75,s); for(int k=0;k<4;k++){ long v=lround((2*k+1)*w/2); if(v<1)v=1; printf("%s%ld,%ld", (s||k)?",":"", v,-v);} printf("\n"); }
   printf("};\n");
+  /* reverb of the main patch, per channel: in -> *0.14 -> reson~ 10 1200 8 -> allpass 65 / 67 / 85 ms (0.7) -> *0.5 -> added to the dry signal.
+   * reson~ is read as a two-pole resonator with peak gain 10 at 1200 Hz and Q 8, at 44.1 kHz. Q24 coefficients. */
+  { double sr=44100, R=exp(-M_PI*(1200.0/8)/sr), th=2*M_PI*1200/sr, b1=2*R*cos(th), b2=-R*R;
+    double re=1-R*cos(2*th), im=R*sin(2*th), a0=10.0*(1-R)*sqrt(re*re+im*im)*0.14;
+    printf("#define OUAL_RVB_A0 %ld   /* 0.14 * reson~ gain, Q24 */\n#define OUAL_RVB_B1 %ld\n#define OUAL_RVB_B2 %ld\n",lround(a0*16777216.0),lround(b1*16777216.0),lround(b2*16777216.0)); }
   printf("#endif\n");
   return 0; }

@@ -191,4 +191,7 @@ static OUAL_DATA const int16_t oual_dqt3[16*8] = {1,-1,3,-3,5,-5,7,-7
 ,2527,-2527,7580,-7580,12633,-12633,17686,-17686
 ,4422,-4422,13265,-13265,22108,-22108,30951,-30951
 };
+#define OUAL_RVB_A0 84540   /* 0.14 * reson~ gain, Q24 */
+#define OUAL_RVB_B1 32713766
+#define OUAL_RVB_B2 -16422468
 #endif

@@ -557,7 +557,7 @@ static void draw_vis(void)
     case PG_HOME: draw_strip(in, 32); draw_zone_line(58); draw_wave(74, 70, 0); break;
     case PG_EDIT: draw_zone_line(30); draw_wave(46, 98, 1); break;
     case PG_FX: draw_zone_line(30); draw_text(8, 60, 1, "CRUSH  SRR  DRIVE  AM", COL_DIM, COL_BG); draw_text(8, 76, 1, "OF THE SELECTED VOICE", COL_DIM, COL_BG); break;
-    case PG_GLO: draw_text(8, 60, 1, "MASTER LEVEL", COL_DIM, COL_BG); break;
+    case PG_GLO: draw_text(8, 60, 1, "MASTER, REVERB, AND THE LOAD OF THE AUDIO", COL_DIM, COL_BG); draw_text(8, 76, 1, "INTERRUPT: THE LONGEST BLOCK AS A PERCENT", COL_DIM, COL_BG); draw_text(8, 92, 1, "OF THE TIME A BLOCK LASTS. K3 OR K4 RESETS", COL_DIM, COL_BG); break;
     case PG_SAVE: draw_text(8, 60, 1, "TURN K1 TO SAVE THE VOICES", COL_DIM, COL_BG); if (msg_until) draw_text(8, 140, 1, msg_text, COL_ACC, COL_BG); break;
     case PG_SEL: {
         draw_strip(in, 32); unsigned idx[32], cnt = 0, pos = 0; for (unsigned i = 0; i < in->n_slots && cnt < 32; ++i) if (in_bank(i)) { if ((int)i == az) pos = cnt; idx[cnt++] = i; }
@@ -676,6 +676,7 @@ void groove_screen_control(void)
         uint32_t snd = le_sounding_keys(bank) & ((1UL << KEYS) - 1U);
         if (snd != sounding) { uint32_t d = snd ^ sounding; sounding = snd; leds_refresh(now); if ((page == PG_HOME || page == PG_SEL) && le_info()) for (unsigned k = 0; k < KEYS; ++k) if (d >> k & 1U) draw_strip_key(le_info(), 32, k); }
     }
+    if (le_is_oual() && page == PG_GLO) cpu_poll(now);
     if (msg_until && now > msg_until) { msg_until = 0; msg_text = ""; dirty |= 3; }
     if (dirty && gfx_idle()) { unsigned d = dirty; dirty = 0; last_draw = now; draw_page(d); leds_refresh(now); }
     else if (now - last_draw > 100U) {

@@ -62,9 +62,17 @@ typedef struct {
   oual_slot slot[OUAL_CACHE_SLOTS]; uint32_t tick;
 } oual_voice;
 
+/* The reverb of the main patch: per channel a resonator and three allpass filters. Delay lines for up to 48 kHz. */
+#define OUAL_RVB_N0 3120    /* 65 ms */
+#define OUAL_RVB_N1 3216    /* 67 ms */
+#define OUAL_RVB_N2 4080    /* 85 ms */
+typedef struct { int32_t y1, y2; int16_t d0[OUAL_RVB_N0], d1[OUAL_RVB_N1], d2[OUAL_RVB_N2]; uint16_t i0, i1, i2; } oual_rvb_ch;
 typedef struct {
   uint32_t out_rate;
   int master_q15;
+  int rvb_permille;        /* 0 = off (costs nothing), 1000 = as in the patch */
+  uint16_t rvb_n0, rvb_n1, rvb_n2;
+  oual_rvb_ch rvb[2];
   oual_voice v[OUAL_VOICES];
   uint32_t stat_decoded;   /* samples decoded since init (cost accounting) */
   uint32_t stat_wraps;
@@ -73,6 +81,8 @@ typedef struct {
 void oual_init(oual_engine *e, uint32_t out_rate, uint32_t seed);
 void oual_set_sound(oual_engine *e, int v, const oual_sound *s);
 void oual_set(oual_engine *e, int v, enum oual_param p, int value);   /* safe to call from the audio side */
+void oual_set_reverb(oual_engine *e, int permille);   /* 0..1000, safe to call from the audio side */
+void oual_rvb_run(oual_engine *e, int32_t *mix, int frames);   /* interleaved stereo in place (also used by the tests) */
 void oual_set_envelope(oual_engine *e, int v, const int16_t env[OUAL_ENV_POINTS]);
 /* Interleaved stereo int16, `frames` frames. */
 void oual_render(oual_engine *e, int16_t *out, int frames);

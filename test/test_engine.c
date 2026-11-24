@@ -100,6 +100,30 @@ static void t_envelope_gate(void){
   int16_t *x=rend(&e,OUT_RATE/2); free(x); oual_set(&e,0,OUAL_P_ON,0); x=rend(&e,OUT_RATE/2); int maxd=0; for(int i=1;i<OUT_RATE/2;i++){ int d=abs(x[i]-x[i-1]); if(d>maxd)maxd=d; }
   CHECK(maxd<1500,"gate off step %d",maxd); CHECK(rms(x,OUT_RATE/4,OUT_RATE/2)==0,"voice not silent after fade-out"); free(x); }
 
+static void t_reverb(void){
+  printf("reverb: integer chain against a floating-point model, decay, stability\n");
+  static oual_engine e; oual_init(&e,OUT_RATE,1); oual_set_reverb(&e,1000);
+  /* model of the patch's rvb: x*0.14 -> reson (peak gain 10 at 1200 Hz, Q 8) -> allpass 65/67/85 ms (c 0.7) -> *0.5, plus dry */
+  double R=exp(-M_PI*150.0/OUT_RATE), th=2*M_PI*1200/OUT_RATE, b1=2*R*cos(th), b2=-R*R, re=1-R*cos(2*th), im=R*sin(2*th), a0=10*(1-R)*sqrt(re*re+im*im)*0.14;
+  int N=OUT_RATE*3, burst=OUT_RATE/2; int n0=e.rvb_n0,n1=e.rvb_n1,n2=e.rvb_n2;
+  int32_t *buf=calloc((size_t)N*2,4); double *ref=calloc((size_t)N*2,8); uint32_t r=7;
+  for(int i=0;i<burst;i++){ r=r*1664525u+1013904223u; double x=((int)((r>>12)&0xffff)-32768)*0.5; buf[2*i]=(int32_t)x; buf[2*i+1]=(int32_t)(x*0.7); }
+  for(int ch=0;ch<2;ch++){ double y1=0,y2=0; double *d0=calloc(n0,8),*d1=calloc(n1,8),*d2=calloc(n2,8); int i0=0,i1=0,i2=0;
+    for(int i=0;i<N;i++){ double x=buf[2*i+ch]/16.0, y=a0*x+b1*y1+b2*y2; y2=y1; y1=y; double w=y;
+      double *dl[3]={d0,d1,d2}; int *ix[3]={&i0,&i1,&i2}; int nn[3]={n0,n1,n2};
+      for(int k=0;k<3;k++){ double wd=dl[k][*ix[k]], ww=w-0.7*wd; double yy=0.7*ww+wd; dl[k][*ix[k]]=ww; if(++*ix[k]>=nn[k])*ix[k]=0; w=yy; }
+      ref[2*i+ch]=buf[2*i+ch]+w*8; }
+    free(d0);free(d1);free(d2); }
+  for(int b=0;b<N;b+=256){ int n=N-b<256?N-b:256; oual_rvb_run(&e,buf+2*b,n); }
+  double se=0,sn=0,wetmax=0; for(int i=0;i<N*2;i++){ double d=buf[i]-ref[i]; se+=d*d; sn+=ref[i]*ref[i]; }
+  for(int i=0;i<N;i++){ double a=fabs(ref[2*i]); if(a>wetmax)wetmax=a; }
+  double snr=10*log10(sn/(se+1e-9)); printf("  integer vs float model: %.1f dB (model peak %.0f)\n",snr,wetmax); CHECK(snr>35,"reverb integer vs float %.1f dB",snr);
+  int tail=0; for(int i=N-OUT_RATE/2;i<N;i++){ int a=abs(buf[2*i]); if(a>tail)tail=a; }
+  printf("  after 2 s of silence the tail is %d (of 2^19)\n",tail); CHECK(tail<64,"reverb tail did not die out: %d",tail);
+  oual_init(&e,OUT_RATE,1); oual_set_reverb(&e,1000); for(int i=0;i<N*2;i++) buf[i]=(i/2%2)?200000:-200000;   /* full-scale square at Nyquist/2 */
+  for(int b=0;b<N;b+=256){ int n=N-b<256?N-b:256; oual_rvb_run(&e,buf+2*b,n); } int pk=0; for(int i=0;i<N*2;i++){ int a=abs(buf[i]); if(a>pk)pk=a; } CHECK(pk<4000000,"reverb stays bounded on a loud input (peak %d)",pk);
+  free(buf); free(ref); }
+
 static void t_stress(void){
   printf("stress: 10 voices, every control at its extreme\n"); snd_t s=make_tone(220,0.95,2.0);
   oual_engine e; oual_init(&e,OUT_RATE,11); oual_sound o=osnd(&s);
@@ -110,5 +134,5 @@ static void t_stress(void){
   printf("  peak %d of 32767, decoded %u samples in 4 s (%.0f per second), wraps %u\n",pk,e.stat_decoded,e.stat_decoded/4.0,e.stat_wraps);
   CHECK(pk<=32767,"peak overflow"); CHECK(pk>1000,"stress output is silent"); free(x); }
 
-int main(void){ setvbuf(stdout,NULL,_IONBF,0); t_codec(); t_pitch(); t_loop(); t_crush_srr(); t_am_drive(); t_rand_pos(); t_envelope_gate(); t_stress();
+int main(void){ setvbuf(stdout,NULL,_IONBF,0); t_codec(); t_pitch(); t_loop(); t_crush_srr(); t_am_drive(); t_rand_pos(); t_envelope_gate(); t_reverb(); t_stress();
   printf("\n%d checks, %d failed\n",checks,fails); return fails?1:0; }

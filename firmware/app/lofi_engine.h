@@ -87,6 +87,8 @@ int le_settings_import(const uint8_t *buf, unsigned n);
 int le_is_oual(void);
 int le_oual_get(unsigned voice, unsigned param);                  /* the control side's copy of enum oual_param */
 void le_oual_set(unsigned voice, unsigned param, int value);      /* clamps, remembers, and queues it for the audio side */
+int le_oual_get_reverb(void);                                      /* 0..1000 permille of the patch's reverb */
+void le_oual_set_reverb(int permille);
 int le_oual_decode(unsigned slot, unsigned sb, int16_t *pcm640);  /* one superblock of the slot's sound, for the waveform */
 /* audio side: adds nothing, writes FM1_BLOCK_FRAMES stereo frames of signed Q23 */
 void le_render(int32_t *out, unsigned frames);
