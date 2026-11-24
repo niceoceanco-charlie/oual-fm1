@@ -1,0 +1,23 @@
+name: Sound feedback
+description: Which codec setting sounds better, or how the engine sounds
+labels: [sound]
+body:
+  - type: markdown
+    attributes:
+      value: "Listen first at https://niceocean.studio/lab/oual (the blind A/B test is there)."
+  - type: dropdown
+    id: codec
+    attributes:
+      label: Codec setting you prefer
+      options: [2-bit 16k, 2-bit 22k, 3-bit 22k, 4-bit 22k, No preference]
+    validations: {required: true}
+  - type: textarea
+    id: why
+    attributes:
+      label: What did you hear?
+      description: Clip, what bothered you or pleased you.
+    validations: {required: true}
+  - type: input
+    id: use
+    attributes:
+      label: What would you use it for? (optional)
