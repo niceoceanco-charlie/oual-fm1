@@ -62,7 +62,7 @@ jobs:
           done | tee heap.txt
           { echo '### Image sizes (limit 453921 bytes)'; echo '```'; grep -h "app image" base-build.log oual-build.log || true; echo '```'
             echo '### Heap left after the static data (_MALLOC_SIZE, hex). v0.9.1 and v0.9.2 bricked a device with 40 KB (0xA000) left'; echo '```'; cat heap.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-      - name: Heap rule (every oual build keeps at least 105,740 bytes of heap: the only figure proven to update on a real FM-1)
+      - name: "Heap rule (every oual build keeps at least 105,740 bytes of heap)"
         run: |
           hex=$(grep -E "_MALLOC_SIZE =" firmware/build/dx7/sdk.map | head -1 | awk '{print $1}')
           heap=$((hex))
