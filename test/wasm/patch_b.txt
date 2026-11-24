@@ -1,0 +1,18 @@
+# all ten voices, extreme settings, half reverb
+seed 3
+master 0.6
+reverb 500
+voice 1 sound=out/t01.o3 on=1 crush=0.95 srr=0.9 drive=1.0 level_y=0.5
+voice 2 sound=out/t02.o3 on=1 transpose=-12 env=-0.7 rand=1.0 level_y=0.5
+voice 3 sound=out/t03.o3 on=1 transpose=12 am=1.0 pan=0 level_y=0.5
+voice 4 sound=out/t04.o3 on=1 start=0.1 end=0.3 level_y=0.5
+voice 5 sound=out/t05.o3 on=1 srr=0.6 level_y=0.5
+voice 6 sound=out/t06.o3 on=1 start=0.2 end=0.6 rand=0.3 pan=1 level_y=0.5
+voice 7 sound=out/t07.o3 on=1 drive=0.5 env=0.25 level_y=0.5
+voice 8 sound=out/t08.o3 on=1 start=0 end=0.3 transpose=3 level_y=0.5
+voice 9 sound=out/t09.o3 on=1 crush=0.5 level_y=0.5
+voice 10 sound=out/t10.o3 on=1 start=0.5 end=0.7 level_y=0.5
+at 1.0 voice 1 crush=0 srr=0
+at 2.0 voice 5 on=0
+at 2.0 voice 6 on=0
+at 3.0 voice 5 on=1

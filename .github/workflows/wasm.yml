@@ -1,0 +1,48 @@
+# The oual engine as WebAssembly (plain clang + wasm-ld, no Emscripten), tested against the native engine, published as a versioned artifact.
+# Nothing here touches a device. The artifact holds oual.wasm, the JS, manifest.json and SHA256SUMS; a tarball with its own sha256 sits next to them.
+name: wasm
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: wasm-${{ github.ref }}
+  cancel-in-progress: true
+defaults:
+  run:
+    shell: bash
+jobs:
+  wasm:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Toolchain (clang with the wasm32 target, wasm-ld, node)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq lld
+          clang --version | head -1
+          clang --print-targets | grep -i wasm32
+          command -v wasm-ld || ls /usr/lib/llvm-*/bin/wasm-ld
+          node --version
+      - name: Build oual.wasm
+        run: |
+          export PATH="$(dirname "$(ls /usr/lib/llvm-*/bin/wasm-ld | tail -1)"):$PATH"
+          tools/build_wasm.sh out/wasm
+          ls -l out/wasm
+      - name: Tests (native engine vs WebAssembly, encoder, packs, memory growth, the worklet file)
+        run: test/run_wasm_tests.sh out/wasm
+      - name: Package (versioned, with sha256)
+        run: |
+          V=$(cat wasm/VERSION); N="oual-wasm-$V"
+          mkdir -p "dist/$N" && cp out/wasm/{oual.wasm,oual-core.mjs,oual.mjs,oual-worklet.js,manifest.json,SHA256SUMS} "dist/$N/" && cp docs/WASM.md "dist/$N/README.md"
+          tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner -cf - -C dist "$N" | gzip -n -9 > "dist/$N.tar.gz"
+          (cd dist && sha256sum "$N.tar.gz" > "$N.tar.gz.sha256" && cat "$N.tar.gz.sha256")
+          echo "version=$V" >> "$GITHUB_ENV"
+          { echo '### oual-wasm '"$V"; echo; echo '```'; cat out/wasm/SHA256SUMS; (cd dist && cat "$N.tar.gz.sha256"); echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: oual-wasm-${{ env.version }}
+          path: dist/

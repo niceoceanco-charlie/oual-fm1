@@ -28,6 +28,7 @@ int main(int c,char**argv){
   while(fgets(line,sizeof line,f)){ char *tok=strtok(line," \t\r\n"); if(!tok||tok[0]=='#') continue;
     if(!strcmp(tok,"seed")){ seed=(uint32_t)atoi(strtok(NULL," \t\r\n")); oual_init(e,44100,seed); }
     else if(!strcmp(tok,"master")){ master=atof(strtok(NULL," \t\r\n")); e->master_q15=(int)lround(master*32768); }
+    else if(!strcmp(tok,"reverb")){ oual_set_reverb(e,atoi(strtok(NULL," \t\r\n"))); }   /* permille, 0..1000; after "seed" */
     else if(!strcmp(tok,"voice")){ int v=atoi(strtok(NULL," \t\r\n"))-1; char*kv; while((kv=strtok(NULL," \t\r\n"))){ if(!strncmp(kv,"sound=",6)) load(e,v,kv+6); else apply(e,v,kv); } }
     else if(!strcmp(tok,"at")){ double t=atof(strtok(NULL," \t\r\n")); strtok(NULL," \t\r\n"); int v=atoi(strtok(NULL," \t\r\n"))-1; char*kv; while((kv=strtok(NULL," \t\r\n"))){ ev_t *x=&evs[ne++]; x->t=t; x->v=v; strncpy(x->kv,kv,63); x->kv[63]=0; } } }
   fclose(f); int total=(int)lround(atof(argv[3])*44100); int16_t *out=malloc((size_t)total*4); int done=0;
