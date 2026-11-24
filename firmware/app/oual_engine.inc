@@ -37,24 +37,30 @@ static OUAL_CODE void oual_derive(oual_engine *e, oual_voice *v){
 
 /* ---- loop window: the patch's "grnish" subpatch. On every wrap the window is re-drawn around the base window:
  *   start' = start + L*rp*(r1-0.5);  end' = start' + L + L*rp*(r2-0.5);  both clipped to the sound. ---- */
+/* (a*b)>>16 in 32-bit arithmetic, exact for a < 2^22 and b <= 2^17: the audio core has no cheap 64-bit multiply or divide */
+static OUAL_CODE uint32_t oual_mulshr16(uint32_t a, uint32_t b){ uint32_t A=(a>>8)*b, B=(a&255)*b; return (A>>8)+((((A&255)<<8)+B)>>16); }
 static OUAL_CODE void oual_new_window(oual_voice *v){
-  int32_t dur=(int32_t)v->snd.frames; int64_t bs=((int64_t)v->start_q16*dur)>>16, be=((int64_t)v->end_q16*dur)>>16;
-  if(be<bs){ int64_t t=bs; bs=be; be=t; }
-  int64_t L=be-bs, sc=(L*v->rand_pos)/1000, s=bs, e;
-  if(sc){ s=bs+((sc*((int64_t)(oual_xs(&v->rng)&0xFFFF)-32768))>>16); }
-  if(s<0)s=0; if(s>dur)s=dur;
-  e=s+L; if(sc) e+=((sc*((int64_t)(oual_xs(&v->rng)&0xFFFF)-32768))>>16);
-  if(e<0)e=0; if(e>dur)e=dur;
-  if(e-s<OUAL_MINLOOP){ e=s+OUAL_MINLOOP; if(e>dur){ e=dur; s=dur-OUAL_MINLOOP; if(s<0)s=0; } }
-  v->ls=(int32_t)s; v->le=(int32_t)e;
-  { uint64_t len=(uint64_t)(v->le-v->ls); v->dph=(uint32_t)((v->step)/len); }   /* loop phase per output sample */
-  if(v->env_rate){ int64_t k=(1024*1024)/v->env_rate; if(k>64*1024)k=64*1024; if(k<-64*1024)k=-64*1024;
-    v->env_dph=(uint32_t)(int32_t)(((int64_t)v->dph*k)>>10); } else v->env_dph=0; }
+  uint32_t dur=v->snd.frames, bs=oual_mulshr16(dur,v->start_q16), be=oual_mulshr16(dur,v->end_q16);
+  if(be<bs){ uint32_t t=bs; bs=be; be=t; }
+  uint32_t L=be-bs, sc=(L*(uint32_t)v->rand_pos)/1000u;            /* L < 2^21, rand_pos <= 1000: fits 32 bits */
+  int32_t s=(int32_t)bs, e;
+  if(sc){ int32_t r=(int32_t)(oual_xs(&v->rng)&0xFFFF)-32768; s+=((int32_t)sc*(r>>8))>>8; }
+  if(s<0)s=0; if(s>(int32_t)dur)s=(int32_t)dur;
+  e=s+(int32_t)L; if(sc){ int32_t r=(int32_t)(oual_xs(&v->rng)&0xFFFF)-32768; e+=((int32_t)sc*(r>>8))>>8; }
+  if(e<0)e=0; if(e>(int32_t)dur)e=(int32_t)dur;
+  if(e-s<OUAL_MINLOOP){ e=s+OUAL_MINLOOP; if(e>(int32_t)dur){ e=(int32_t)dur; s=(int32_t)dur-OUAL_MINLOOP; if(s<0)s=0; } }
+  v->ls=s; v->le=e;
+  { uint32_t len=(uint32_t)(e-s), p=v->pitch_q16<(1u<<19)?v->pitch_q16:(1u<<19)-1; v->dph=((p<<12)/len)<<4; }   /* loop phase per output sample, Q32 */
+  if(v->env_rate){ int32_t k=(1024*1024)/v->env_rate; if(k>32768)k=32768; if(k<-32768)k=-32768;
+    int32_t H=(int32_t)(v->dph>>16), Lo=(int32_t)(v->dph&0xFFFF);          /* (dph*k)>>10 mod 2^32, without a 64-bit multiply */
+    v->env_dph=(uint32_t)(H*k)*64u+(uint32_t)((Lo*k)>>10); } else v->env_dph=0; }
 
 void oual_init(oual_engine *e, uint32_t out_rate, uint32_t seed){
   memset(e,0,sizeof *e); e->out_rate=out_rate; e->master_q15=26214; /* 0.8 */
+#ifndef OUAL_NO_REVERB
   { uint32_t r=out_rate?out_rate:44100; e->rvb_n0=(uint16_t)(r*65/1000); e->rvb_n1=(uint16_t)(r*67/1000); e->rvb_n2=(uint16_t)(r*85/1000);
     if(e->rvb_n0>OUAL_RVB_N0)e->rvb_n0=OUAL_RVB_N0; if(e->rvb_n1>OUAL_RVB_N1)e->rvb_n1=OUAL_RVB_N1; if(e->rvb_n2>OUAL_RVB_N2)e->rvb_n2=OUAL_RVB_N2; }
+#endif
   for(int i=0;i<OUAL_VOICES;i++){ oual_voice *v=&e->v[i]; v->rng=seed*2654435761u+i*40503u+1; if(!v->rng)v->rng=1;
     v->end_q16=65536; v->pan_x=500; v->level_y=500; v->env_rate=1024; for(int k=0;k<OUAL_ENV_POINTS;k++) v->env[k]=32767;
     for(int s=0;s<OUAL_CACHE_SLOTS;s++) v->slot[s].block=-1; v->dirty=1; } }
@@ -117,10 +123,11 @@ static OUAL_CODE void oual_render_voice(oual_engine *e, oual_voice *v, int32_t *
     if((int32_t)(v->pos>>32)>=v->le){
       uint64_t over=v->pos-((uint64_t)v->le<<32); e->stat_wraps++;
       oual_new_window(v); v->pos=((uint64_t)v->ls<<32)+over; if((int32_t)(v->pos>>32)>=v->le) v->pos=(uint64_t)v->ls<<32;
-      v->ph=(uint32_t)(((over>>16)/(uint64_t)(v->le-v->ls))<<16); v->env_ph=0; } } }
+      v->ph=((uint32_t)(over>>16)/(uint32_t)(v->le-v->ls))<<16; v->env_ph=0; } } }
 
-/* ---- the reverb: in -> *0.14 -> reson~ -> three allpass filters (y = c*w + w[n-D], w = x - c*w[n-D], c = 0.7) -> *0.5, added to the dry signal ---- */
 OUAL_CODE void oual_set_reverb(oual_engine *e, int permille){ e->rvb_permille = permille < 0 ? 0 : permille > 1000 ? 1000 : permille; }
+#ifndef OUAL_NO_REVERB
+/* ---- the reverb: in -> *0.14 -> reson~ -> three allpass filters (y = c*w + w[n-D], w = x - c*w[n-D], c = 0.7) -> *0.5, added to the dry signal ---- */
 static OUAL_CODE int32_t oual_ap(int16_t *d, uint16_t *ix, unsigned n, int32_t x){
   unsigned i=*ix; int32_t wd=d[i]; int32_t w=x-((22938*wd)>>15); if(w>32767)w=32767; if(w<-32768)w=-32768;
   int32_t y=((22938*w)>>15)+wd; d[i]=(int16_t)w; if(++i>=n) i=0; *ix=(uint16_t)i; return y>32767?32767:y<-32768?-32768:y; }
@@ -138,11 +145,14 @@ OUAL_CODE void oual_rvb_run(oual_engine *e, int32_t *mix, int frames){
     for(int k=0;k<frames;k++){
       int32_t w=oual_ap(c->d0,&c->i0,e->rvb_n0,tmp[k]); w=oual_ap(c->d1,&c->i1,e->rvb_n1,w); w=oual_ap(c->d2,&c->i2,e->rvb_n2,w);
       mix[2*k+ch]+=(w*e->rvb_permille/1000)*8; } } }      /* *0.5 and back to the mix scale: (w * 16) / 2 */
+#endif
 OUAL_CODE void oual_render(oual_engine *e, int16_t *out, int frames){
   static int32_t mix[2*512]; 
   while(frames>0){ int n=frames>512?512:frames; for(int i=0;i<2*n;i++) mix[i]=0;   /* no libc in the audio interrupt */
     for(int i=0;i<OUAL_VOICES;i++) oual_render_voice(e,&e->v[i],mix,n);
+#ifndef OUAL_NO_REVERB
     if(e->rvb_permille) oual_rvb_run(e,mix,n);
+#endif
     for(int i=0;i<2*n;i++){ int32_t x=((mix[i]*(e->master_q15>>4))>>11), a=x<0?-x:x;   /* 32-bit only: 10 voices (19 bits) x 11 bits */  /* limiter: linear to 0.7, knee to 1.0 at 1.3 */
       if(a>42598) a=32767; else if(a>22938){ int32_t d=a-22938; a=a-((((d*d)>>15)*27307)>>15); if(a>32767)a=32767; }
       out[i]=(int16_t)(x<0?-a:a); }

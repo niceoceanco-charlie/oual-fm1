@@ -6,3 +6,5 @@ cc -O2 -Wall -Wextra -o /tmp/oual_test test/test_engine.c core/oual_engine.c -lm
 /tmp/oual_test
 cc -g -O1 -fsanitize=undefined -fno-sanitize-recover=undefined -o /tmp/oual_test_san test/test_engine.c core/oual_engine.c -lm
 /tmp/oual_test_san | tail -1
+cc -O2 -Wall -Wextra -DOUAL_NO_REVERB -o /tmp/oual_test_nr test/test_engine.c core/oual_engine.c -lm
+/tmp/oual_test_nr | tail -1

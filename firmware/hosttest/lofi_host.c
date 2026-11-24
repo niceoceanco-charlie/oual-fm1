@@ -30,6 +30,7 @@ const uint8_t *fm1_flash_map(uint32_t o, size_t n) { return o + n <= FLASH_BYTES
 uint32_t fm1_audio_block_ticks(void) { return 1000; }
 void fm1_audio_stats_read(struct fm1_audio_stats *s) { memset(s, 0, sizeof *s); s->peak_ticks = 250; s->overruns = 2; }   /* host: a made-up 25% load and 2 overruns */
 void fm1_audio_stats_reset_peak(void) {}
+void fm1_audio_load_read(uint32_t *avg, uint32_t *pk) { *avg = 100; *pk = 250; }
 static uint8_t last_reply[LF_MAXMSG]; static size_t last_reply_n;
 int fm1_midi_send_port(unsigned port, const uint8_t *m, size_t n) { (void)port; memcpy(last_reply, m, n); last_reply_n = n; return 0; }
 

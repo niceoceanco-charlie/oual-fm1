@@ -88,7 +88,11 @@ int le_is_oual(void);
 int le_oual_get(unsigned voice, unsigned param);                  /* the control side's copy of enum oual_param */
 void le_oual_set(unsigned voice, unsigned param, int value);      /* clamps, remembers, and queues it for the audio side */
 int le_oual_get_reverb(void);                                      /* 0..1000 permille of the patch's reverb */
-void le_oual_set_reverb(int permille);
+void le_oual_set_reverb(int permille);                              /* a no-op in the oual-only build: no reverb there */
+int le_oual_cap(void);                                             /* how many voices may sound at once (default 3: what fits under about 70% PEAK) */
+void le_oual_set_cap(int cap);                                     /* 1..10; lowering it switches the newest voices off */
+int le_oual_refused(void);                                         /* counts presses refused because the cap was reached */
+int le_oual_drop_newest(void);                                     /* switch off the voice that was switched on last; returns its number, 0 if none */
 int le_oual_decode(unsigned slot, unsigned sb, int16_t *pcm640);  /* one superblock of the slot's sound, for the waveform */
 /* audio side: adds nothing, writes FM1_BLOCK_FRAMES stereo frames of signed Q23 */
 void le_render(int32_t *out, unsigned frames);

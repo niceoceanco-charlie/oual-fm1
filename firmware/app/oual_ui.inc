@@ -4,16 +4,22 @@
  *   HOME  STATE, TRANSPOSE, RAND POS, LEVEL      FX   CRUSH, SRR, DRIVE, AM      EDIT  START, END, PAN, ENV RATE
  *   GLO   MASTER                                 SEL  STATE                       SAVE  as before (saves the ten voices' settings)
  * ENV, LFO, ARP and SEQ belong to the sampler and show a note. Not built yet: the envelope shape editor, presets. */
-/* The audio interrupt's load, from the stats the firmware already keeps: the longest time one 128-frame block took, against the time a block lasts. */
+/* The audio interrupt's load: the average and the longest time one 128-frame block took in the last half second, as a percent of the time a block lasts (the firmware's own timer;
+ * audio.c keeps the sums). The overruns are the blocks that came too late (an audible break). If overruns appear while two or more voices sound, the newest voice is switched off. */
 struct fm1_audio_stats;
 extern uint32_t fm1_audio_block_ticks(void);
 extern void fm1_audio_stats_reset_peak(void);
-static unsigned cpu_pct, cpu_over; static uint32_t cpu_t;
+extern void fm1_audio_load_read(uint32_t *avg_ticks, uint32_t *peak_ticks);
+static unsigned cpu_avg, cpu_pk, cpu_over, cpu_over_seen, cpu_dropped; static uint32_t cpu_t;
 static void cpu_poll(uint32_t now)
 {
     if (now - cpu_t < 500U) return; cpu_t = now;
-    struct fm1_audio_stats st; fm1_audio_stats_read(&st); uint32_t bt = fm1_audio_block_ticks();
-    unsigned p = bt ? (unsigned)((uint64_t)st.peak_ticks * 100 / bt) : 0; if (p != cpu_pct || st.overruns != cpu_over) { cpu_pct = p; cpu_over = st.overruns; dirty |= 1; }
+    uint32_t avg, pk, bt = fm1_audio_block_ticks(); fm1_audio_load_read(&avg, &pk);
+    struct fm1_audio_stats st; fm1_audio_stats_read(&st);
+    unsigned a = bt ? (unsigned)((uint64_t)avg * 100 / bt) : 0, p = bt ? (unsigned)((uint64_t)pk * 100 / bt) : 0;
+    if (st.overruns > cpu_over_seen && le_voices_active() >= 2) { int v = le_oual_drop_newest(); if (v) { static char m[16] = "DROPPED V10"; if (v >= 10) { m[9] = '1'; m[10] = '0'; m[11] = 0; } else { m[9] = (char)('0' + v); m[10] = 0; } ++cpu_dropped; say(m, now); } }
+    cpu_over_seen = st.overruns;
+    if (a != cpu_avg || p != cpu_pk || st.overruns != cpu_over) { cpu_avg = a; cpu_pk = p; cpu_over = st.overruns; dirty |= 1; }
 }
 static void o_pct(tile_t *t, const char *name, int v1000)
 {
@@ -33,7 +39,9 @@ static int oual_tiles(unsigned pg, tile_t t[4])
     case PG_EDIT: {
         int e = le_oual_get(v, OUAL_P_ENV_RATE), a = e < 0 ? -e : e; n = 0; b[n++] = e < 0 ? '-' : '+'; n += (unsigned)fmt_int(b + n, a / 1024); b[n++] = '.'; { unsigned f = (unsigned)(a % 1024) * 100 / 1024; b[n++] = (char)('0' + f / 10); b[n++] = (char)('0' + f % 10); } b[n] = 0;
         o_pct(&t[0], "START", le_oual_get(v, OUAL_P_START) * 1000 / 65536); o_pct(&t[1], "END", le_oual_get(v, OUAL_P_END) * 1000 / 65536); o_pct(&t[2], "PAN", le_oual_get(v, OUAL_P_PAN_X)); tile(&t[3], "ENV RATE", b, (e + 1024) * 100 / 2048); return 1; }
-    case PG_GLO: tile_int(&t[0], "MASTER", (int)le_get_level(), 0, 127); o_pct(&t[1], "REVERB", le_oual_get_reverb()); tile_int(&t[2], "CPU PEAK", (int)cpu_pct, 0, 100); tile_int(&t[3], "OVERRUNS", (int)cpu_over, 0, 100); return 1;
+    case PG_GLO: { char l[12]; tile_int(&t[0], "MASTER", (int)le_get_level(), 0, 127); tile_int(&t[1], "MAX VOICES", le_oual_cap(), 1, OUAL_VOICES);
+        n = (unsigned)fmt_int(l, (int)cpu_avg); l[n++] = '/'; n += (unsigned)fmt_int(l + n, (int)cpu_pk); l[n++] = '%'; l[n] = 0; tile(&t[2], "LOAD AVG/PK", l, (int)(cpu_pk > 100 ? 100 : cpu_pk));
+        tile_int(&t[3], "OVERRUNS", (int)cpu_over, 0, 100); return 1; }
     case PG_SEL: tile(&t[0], "STATE", le_oual_get(v, OUAL_P_ON) ? "ON" : "OFF", -1); return 1;
     case PG_SAVE: return 0;
     default: return 1;
@@ -48,7 +56,7 @@ static int oual_adjust(unsigned pg, unsigned k, int d)
     case PG_HOME: if (k == 0) OSET(OUAL_P_ON, sgn > 0); else if (k == 1) OSET(OUAL_P_TRANSPOSE, OGET(OUAL_P_TRANSPOSE) + d * 100); else if (k == 2) OSET(OUAL_P_RAND_POS, OGET(OUAL_P_RAND_POS) + d * 10); else OSET(OUAL_P_LEVEL_Y, OGET(OUAL_P_LEVEL_Y) - d * 10); break;
     case PG_FX: { static const uint8_t pm[4] = {OUAL_P_CRUSH, OUAL_P_SRR, OUAL_P_DRIVE, OUAL_P_AM}; OSET(pm[k], OGET(pm[k]) + d * 10); break; }
     case PG_EDIT: if (k == 0) OSET(OUAL_P_START, OGET(OUAL_P_START) + d * 328); else if (k == 1) OSET(OUAL_P_END, OGET(OUAL_P_END) + d * 328); else if (k == 2) OSET(OUAL_P_PAN_X, OGET(OUAL_P_PAN_X) + d * 10); else OSET(OUAL_P_ENV_RATE, OGET(OUAL_P_ENV_RATE) + d * 16); break;
-    case PG_GLO: if (k == 0) le_set_level((unsigned)bump((int)le_get_level(), d, 0, 127)); else if (k == 1) le_oual_set_reverb(le_oual_get_reverb() + d * 10); else { fm1_audio_stats_reset_peak(); cpu_t = 0; } break;      /* K3 / K4: start the CPU peak over */
+    case PG_GLO: if (k == 0) le_set_level((unsigned)bump((int)le_get_level(), d, 0, 127)); else if (k == 1) le_oual_set_cap(le_oual_cap() + sgn); else { fm1_audio_stats_reset_peak(); cpu_t = 0; cpu_over_seen = 0; } break;      /* K2: how many voices may sound; K3 / K4: start the overrun count over */
     case PG_SEL: if (k == 0) OSET(OUAL_P_ON, sgn > 0); break;
     case PG_SAVE: return 0;
     default: break;

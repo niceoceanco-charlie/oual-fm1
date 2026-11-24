@@ -14,6 +14,7 @@ static struct fm1_audio_stats statistics;
 static uint32_t block_ticks, previous_tick;
 static uint8_t initialized, previous_valid;
 static volatile unsigned mute_depth;
+static uint32_t load_sum, load_n, load_peak;      /* time one block took, summed since the last fm1_audio_load_read */
 
 static inline __attribute__((always_inline)) uint32_t elapsed(uint32_t start, uint32_t end)
 {
@@ -58,6 +59,7 @@ FM1_AUDIO_CODE __attribute__((interrupt(""))) void fm1_audio_irq(void)
     }
     used = elapsed(start, FM1_AUDIO_TIMER_COUNT);
     if (used > statistics.peak_ticks) statistics.peak_ticks = used;
+    load_sum += used; ++load_n; if (used > load_peak) load_peak = used;
     ++statistics.blocks;
 }
 void fm1_audio_suspend(void)
@@ -107,6 +109,14 @@ int fm1_audio_start(void)
     FM1_ALNK_CON0 |= 1U << 11;
     initialized = 1;
     return 0;
+}
+/* Average and longest block time since the last call (control task, about twice a second), both in timer ticks; then they start over. */
+void fm1_audio_load_read(uint32_t *avg_ticks, uint32_t *peak_ticks)
+{
+    uint32_t flags = fm1_device_irq_save();
+    uint32_t n = load_n, sum = load_sum, pk = load_peak; load_sum = 0; load_n = 0; load_peak = 0;
+    fm1_device_irq_restore(flags);
+    *avg_ticks = n ? sum / n : 0; *peak_ticks = pk;
 }
 uint32_t fm1_audio_block_ticks(void) { return block_ticks; }          /* timer ticks in one 128-frame block: peak_ticks / this = the load of the audio interrupt */
 void fm1_audio_stats_reset_peak(void)

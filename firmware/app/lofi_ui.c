@@ -394,7 +394,7 @@ static void draw_header(int force)
     hdr_key = key; hdr_key_valid = 1;
     gfx_fill(0, 0, 240, 26, COL_BAR); draw_text(6, 5, 2, page_name[page], COL_ACC, COL_BAR);
     if (in) { draw_pad(82, 9, 1, in->name, 12, COL_FG, COL_BAR); }
-    if (le_is_oual()) { n = (unsigned)fmt_int(b, st.pattern); n = put(b, n, " ON"); draw_text(160, 9, 1, b, st.pattern ? COL_OK : COL_DIM, COL_BAR); }
+    if (le_is_oual()) { if (msg_until) draw_text(160, 9, 1, msg_text, COL_ACC, COL_BAR); else { n = (unsigned)fmt_int(b, st.pattern); n = put(b, n, " ON"); draw_text(160, 9, 1, b, st.pattern ? COL_OK : COL_DIM, COL_BAR); } }
 #ifndef OUAL_ONLY
     else {
     n = 0; b[n++] = (char)('A' + st.pattern); b[n++] = ' '; n += (unsigned)fmt_int(b + n, st.bpm); b[n] = 0; draw_text(160, 5, 1, b, COL_DIM, COL_BAR);
@@ -557,7 +557,7 @@ static void draw_vis(void)
     case PG_HOME: draw_strip(in, 32); draw_zone_line(58); draw_wave(74, 70, 0); break;
     case PG_EDIT: draw_zone_line(30); draw_wave(46, 98, 1); break;
     case PG_FX: draw_zone_line(30); draw_text(8, 60, 1, "CRUSH  SRR  DRIVE  AM", COL_DIM, COL_BG); draw_text(8, 76, 1, "OF THE SELECTED VOICE", COL_DIM, COL_BG); break;
-    case PG_GLO: draw_text(8, 60, 1, "MASTER, REVERB, AND THE LOAD OF THE AUDIO", COL_DIM, COL_BG); draw_text(8, 76, 1, "INTERRUPT: THE LONGEST BLOCK AS A PERCENT", COL_DIM, COL_BG); draw_text(8, 92, 1, "OF THE TIME A BLOCK LASTS. K3 OR K4 RESETS", COL_DIM, COL_BG); break;
+    case PG_GLO: draw_text(8, 50, 3, "OUAL V0.2", COL_ACC, COL_BG); draw_text(8, 90, 1, "LOAD: AVERAGE / LONGEST BLOCK", COL_DIM, COL_BG); draw_text(8, 104, 1, "K3 OR K4: COUNT OVERRUNS AGAIN", COL_DIM, COL_BG); break;
     case PG_SAVE: draw_text(8, 60, 1, "TURN K1 TO SAVE THE VOICES", COL_DIM, COL_BG); if (msg_until) draw_text(8, 140, 1, msg_text, COL_ACC, COL_BG); break;
     case PG_SEL: {
         draw_strip(in, 32); unsigned idx[32], cnt = 0, pos = 0; for (unsigned i = 0; i < in->n_slots && cnt < 32; ++i) if (in_bank(i)) { if ((int)i == az) pos = cnt; idx[cnt++] = i; }
@@ -604,7 +604,8 @@ static void key_press(unsigned k, uint32_t now)
 {
     const lfp_info_t *in = le_info(); int note = (int)bank * 32 + (int)k, zz = zone_of_note(in, note); (void)now;
     key_act[k] = 0; down_keys |= 1UL << k;
-    if (le_is_oual()) { if (zz >= 0 && zz != az) az = zz; le_note_on((unsigned)note, 100); unsaved = 1; dirty |= 3; return; }      /* oual: a key switches its voice */
+    if (le_is_oual()) { if (zz >= 0 && zz != az) az = zz; int before = le_oual_refused(); le_note_on((unsigned)note, 100); unsaved = 1; dirty |= 3;
+        if (le_oual_refused() != before) { static char m[16] = "MAX   VOICES"; int c = le_oual_cap(); m[4] = c >= 10 ? '1' : (char)('0' + c); m[5] = c >= 10 ? '0' : ' '; say(m, now); } return; }      /* oual: a key switches its voice */
     switch (page) {
     case PG_SEL: if (zz >= 0) { le_zone_t *z = le_zone((unsigned)zz); z->mute = !z->mute; if (z->mute) le_zone_cut((unsigned)zz); az = zz; unsaved = 1; } key_act[k] = 4; dirty |= 3; break;
     case PG_FX: if (k < PN_COUNT) { le_punch(k, 1); key_act[k] = 3; dirty |= 3; } break;
@@ -676,7 +677,7 @@ void groove_screen_control(void)
         uint32_t snd = le_sounding_keys(bank) & ((1UL << KEYS) - 1U);
         if (snd != sounding) { uint32_t d = snd ^ sounding; sounding = snd; leds_refresh(now); if ((page == PG_HOME || page == PG_SEL) && le_info()) for (unsigned k = 0; k < KEYS; ++k) if (d >> k & 1U) draw_strip_key(le_info(), 32, k); }
     }
-    if (le_is_oual() && page == PG_GLO) cpu_poll(now);
+    if (le_is_oual()) cpu_poll(now);      /* every page: the load readout and the protection against overruns */
     if (msg_until && now > msg_until) { msg_until = 0; msg_text = ""; dirty |= 3; }
     if (dirty && gfx_idle()) { unsigned d = dirty; dirty = 0; last_draw = now; draw_page(d); leds_refresh(now); }
     else if (now - last_draw > 100U) {

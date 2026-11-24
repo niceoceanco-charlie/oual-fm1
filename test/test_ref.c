@@ -6,6 +6,7 @@
 #include <string.h>
 #include <math.h>
 #include "../core/oual_engine.h"
+#include "../core/oual_codec3.h"
 #define N 44100
 static double herm(double ym,double y0,double y1,double y2,double t){ double c1=.5*(y1-ym),c2=ym-2.5*y0+2*y1-.5*y2,c3=.5*(y2-ym)+1.5*(y0-y1); return ((c3*t+c2)*t+c1)*t+y0; }
 static double knee(double a,double s,double w){ if(a<=s) return a; if(a>=s+w) return s+w/2; return a-(a-s)*(a-s)/(2*w); }
