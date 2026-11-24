@@ -63,3 +63,8 @@ A/B suggestion for Charlie: record the Max patch's output of one voice playing a
 GLO page (oual build): K1 master, K2 reverb, tile 3 = CPU PEAK (the longest time the audio interrupt took for one 128-frame block, as a percent of the time a block lasts: the firmware already
 kept `peak_ticks`; `fm1_audio_block_ticks()` and `fm1_audio_stats_reset_peak()` were added), tile 4 = overruns. K3 or K4 turns the peak back to zero. Polled twice a second on that page only.
 On the host the harness fakes 25% and 2 overruns. The real numbers come from the first build on the device.
+
+## Heap rule (Nov 24)
+Every oual build keeps at least 105,740 bytes of heap (`_MALLOC_SIZE` in `firmware/build/dx7/sdk.map`; target 120 KB or more). The Bluetooth/USB stack allocates from the heap the statics leave
+(`ferluht/fm1-lofi-sampler` docs/CHANGELOG.md, v0.9.3). 105,740 is the only figure proven on this FM-1 to boot, update and roll back (steps A and B); the oual build with 99,052 booted and played but its
+"Install original V15" failed twice ("The device stopped requesting data"). CI now fails a build below the rule.
