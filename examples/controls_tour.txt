@@ -1,0 +1,12 @@
+# One voice, each control in turn (clean 4 s, then Crush, SRR, Drive, AM, Rand Pos, Transpose, Envelope), 4 s each.
+#   oual_host examples/controls_tour.txt out/controls_tour.wav 36
+seed 2
+voice 1 sound=out/bro_03_rhythmic.o3 on=1 start=0.00 end=0.35 pan=0.5 level_y=0.3
+at 4  voice 1 crush=0.6
+at 8  voice 1 crush=0 srr=0.6
+at 12 voice 1 srr=0 drive=0.9
+at 16 voice 1 drive=0 am=0.9
+at 20 voice 1 am=0 start=0.30 end=0.34 rand=0.8
+at 24 voice 1 rand=0 start=0.00 end=0.35 transpose=-7
+at 28 voice 1 transpose=5
+at 32 voice 1 transpose=0 env=0.25
